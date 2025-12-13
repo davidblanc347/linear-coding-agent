@@ -170,12 +170,14 @@ linear-agent-harness/
 ├── prompts.py                # Prompt loading utilities
 ├── linear_config.py          # Linear configuration constants
 ├── prompts/
-│   ├── app_spec.txt          # Application specification
+│   ├── app_spec.txt          # Application specification (Claude Clone example)
+│   ├── app_spec_template.txt # Template for creating new applications
 │   ├── app_spec_theme_customization.txt  # Example: Theme customization spec
 │   ├── app_spec_mistral_extensible.txt   # Example: Mistral provider spec
 │   ├── initializer_prompt.md # First session prompt (creates Linear issues)
 │   ├── initializer_bis_prompt.md # Prompt for adding new features
 │   └── coding_prompt.md      # Continuation session prompt (works issues)
+├── GUIDE_NEW_APP.md          # Guide pour créer une nouvelle application
 └── requirements.txt          # Python dependencies
 ```
 
@@ -225,6 +227,22 @@ The initializer agent will create:
 All subsequent coding agents will work from this Linear project.
 
 ## Customization
+
+### Creating a New Application from Scratch
+
+To create a **completely new application** (not based on the Claude Clone example):
+
+1. **Read the guide**: See [GUIDE_NEW_APP.md](GUIDE_NEW_APP.md) for detailed instructions
+2. **Use the template**: Copy `prompts/app_spec_template.txt` as a starting point
+3. **Reference the example**: Use `prompts/app_spec.txt` (Claude Clone) as a reference for structure and detail level
+4. **Create your spec**: Write your `prompts/app_spec.txt` with your application specification
+5. **Launch**: Run `python autonomous_agent_demo.py --project-dir ./my_new_app`
+
+**Key points:**
+- Keep the framework files unchanged (they're generic and reusable)
+- Only create/modify `prompts/app_spec.txt` for your new application
+- Use the XML structure from the Claude Clone example as a template
+- Define features with `<feature_X>` tags - each will become a Linear issue
 
 ### Changing the Application
 
