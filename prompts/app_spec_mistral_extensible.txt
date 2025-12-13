@@ -1,0 +1,448 @@
+﻿<project_specification>
+  <project_name>Claude.ai Clone - Multi-Provider Support (Mistral + Extensible)</project_name>
+
+  <overview>
+    This specification adds Mistral AI model support AND creates an extensible provider architecture
+    that makes it easy to add additional AI providers (OpenAI, Gemini, etc.) in the future.
+    This uses the "Open/Closed Principle" - open for extension, closed for modification.
+    
+    All changes are additive and backward-compatible. Existing Claude functionality remains unchanged.
+  </overview>
+
+  <safety_requirements>
+    <critical>
+      - DO NOT modify existing Claude API integration code directly
+      - DO NOT change existing model selection logic for Claude models
+      - DO NOT modify existing database schema without safe migrations
+      - DO NOT break existing conversations or messages
+      - All new code must be in separate files/modules when possible
+      - Test thoroughly before marking issues as complete
+      - Maintain backward compatibility at all times
+      - Refactor Claude code to use BaseProvider WITHOUT changing functionality
+    </critical>
+  </safety_requirements>
+
+  <architecture_design>
+    <provider_pattern>
+      Create an abstract provider interface that all AI providers implement:
+      - BaseProvider (abstract class/interface) - defines common interface
+      - ClaudeProvider (existing code refactored to extend BaseProvider)
+      - MistralProvider (new, extends BaseProvider)
+      - OpenAIProvider (future, extends BaseProvider - easy to add)
+      - GeminiProvider (future, extends BaseProvider - easy to add)
+    </provider_pattern>
+    
+    <benefits>
+      - Easy to add new providers without modifying existing code
+      - Consistent interface across all providers
+      - Isolated error handling per provider
+      - Unified model selection UI
+      - Shared functionality (streaming, error handling, logging)
+      - Future-proof architecture
+    </benefits>
+  </architecture_design>
+
+  <new_features>
+    <feature_provider_architecture>
+      <title>Extensible Provider Architecture (Foundation)</title>
+      <description>
+        Create a provider abstraction layer that allows easy addition of multiple AI providers.
+        This is the foundation that makes adding OpenAI, Gemini, etc. trivial in the future.
+        
+        BaseProvider abstract class should define:
+        - sendMessage(messages, options) -&gt; Promise&lt;response&gt;
+        - streamMessage(messages, options) -&gt; AsyncGenerator&lt;chunk&gt;
+        - getModels() -&gt; Promise&lt;array&gt; of available models
+        - validateApiKey(key) -&gt; Promise&lt;boolean&gt;
+        - getCapabilities() -&gt; object with provider capabilities
+        - getName() -&gt; string (provider name: 'claude', 'mistral', 'openai', etc.)
+        - getDefaultModel() -&gt; string (default model ID for this provider)
+        
+        ProviderRegistry should:
+        - Register all available providers
+        - Provide list of all providers
+        - Check which providers are configured (have API keys)
+        - Enable/disable providers
+        
+        ProviderFactory should:
+        - Create provider instances based on model ID or provider name
+        - Handle provider selection logic
+        - Route requests to correct provider
+      </description>
+      <priority>1</priority>
+      <category>functional</category>
+      <implementation_approach>
+        - Create server/providers/BaseProvider.js (abstract base class)
+        - Refactor existing Claude code to server/providers/ClaudeProvider.js (extends BaseProvider)
+        - Create server/providers/ProviderRegistry.js (manages all providers)
+        - Create server/providers/ProviderFactory.js (creates provider instances)
+        - Update existing routes to use ProviderFactory instead of direct Claude calls
+        - Keep all provider code in server/providers/ directory
+      </implementation_approach>
+      <test_steps>
+        1. Verify Claude still works after refactoring to use BaseProvider
+        2. Test that ProviderFactory creates ClaudeProvider correctly
+        3. Test that ProviderRegistry lists Claude provider
+        4. Verify error handling works correctly
+        5. Test that adding a mock provider is straightforward
+        6. Verify no regression in existing Claude functionality
+      </test_steps>
+    </feature_provider_architecture>
+
+    <feature_mistral_provider>
+      <title>Mistral Provider Implementation</title>
+      <description>
+        Implement MistralProvider extending BaseProvider. This should:
+        - Implement all BaseProvider abstract methods
+        - Handle Mistral-specific API calls (https://api.mistral.ai/v1/chat/completions)
+        - Support Mistral streaming (Server-Sent Events)
+        - Handle Mistral-specific error codes and messages
+        - Provide Mistral model list:
+          * mistral-large-latest (default)
+          * mistral-medium-latest
+          * mistral-small-latest
+          * mistral-7b-instruct
+        - Manage Mistral API authentication
+        - Return responses in unified format (same as Claude)
+      </description>
+      <priority>2</priority>
+      <category>functional</category>
+      <implementation_approach>
+        - Create server/providers/MistralProvider.js
+        - Extend BaseProvider class
+        - Implement Mistral API integration using fetch or axios
+        - Register in ProviderRegistry
+        - Use same response format as ClaudeProvider for consistency
+      </implementation_approach>
+      <test_steps>
+        1. Test MistralProvider.sendMessage() works with valid API key
+        2. Test MistralProvider.streamMessage() works
+        3. Test MistralProvider.getModels() returns correct models
+        4. Test error handling for invalid API key
+        5. Test error handling for API rate limits
+        6. Verify it integrates with ProviderFactory
+        7. Verify responses match expected format
+      </test_steps>
+    </feature_mistral_provider>
+
+    <feature_unified_model_selector>
+      <title>Unified Model Selector (All Providers)</title>
+      <description>
+        Update model selector to dynamically load models from all registered providers.
+        The selector should:
+        - Query all providers for available models via GET /api/models
+        - Group models by provider (Claude, Mistral, etc.)
+        - Display provider badges/icons next to model names
+        - Show which provider each model belongs to
+        - Filter models by provider (optional toggle)
+        - Show provider-specific capabilities (streaming, images, etc.)
+        - Only show models from providers with configured API keys
+        - Handle providers gracefully (show "Configure API key" if not set)
+      </description>
+      <priority>2</priority>
+      <category>functional</category>
+      <implementation_approach>
+        - Create API endpoint: GET /api/models (returns all models from all providers)
+        - Update frontend ModelSelector component to handle multiple providers
+        - Add provider grouping/filtering in UI
+        - Show provider badges/icons next to model names
+        - Group models by provider with collapsible sections
+        - Show provider status (configured/not configured)
+      </implementation_approach>
+      <test_steps>
+        1. Verify model selector shows Claude models (existing functionality)
+        2. Verify model selector shows Mistral models (if key configured)
+        3. Test grouping by provider works
+        4. Test filtering by provider works
+        5. Verify provider badges display correctly
+        6. Test that providers without API keys show "Configure" message
+        7. Verify selecting a model works for both providers
+      </test_steps>
+    </feature_unified_model_selector>
+
+    <feature_provider_settings>
+      <title>Multi-Provider API Key Management</title>
+      <description>
+        Create unified API key management that supports multiple providers. Users should be able to:
+        - Manage API keys for each provider separately (Claude, Mistral, OpenAI, etc.)
+        - See which providers are available
+        - See which providers are configured (have API keys)
+        - Test each provider's API key independently
+        - Enable/disable providers (hide models if key not configured)
+        - See provider status indicators (configured/not configured/error)
+        - Update or remove API keys for any provider
+        - See usage statistics per provider
+      </description>
+      <priority>2</priority>
+      <category>functional</category>
+      <implementation_approach>
+        - Create server/routes/providers.js with unified provider management
+        - Update settings UI to show provider cards (one per provider)
+        - Each provider card has:
+          * Provider name and logo/icon
+          * API key input field (masked)
+          * "Test Connection" button
+          * Status indicator (green/yellow/red)
+          * Enable/disable toggle
+        - Store keys in api_keys table with key_name = 'claude_api_key', 'mistral_api_key', etc.
+        - Use same encryption method for all providers
+      </implementation_approach>
+      <test_steps>
+        1. Configure Claude API key (verify existing functionality still works)
+        2. Configure Mistral API key
+        3. Verify both keys are stored separately
+        4. Test each provider's "Test Connection" button
+        5. Remove one key and verify only that provider's models are hidden
+        6. Verify provider status indicators update correctly
+        7. Test that disabling a provider hides its models
+      </test_steps>
+    </feature_provider_settings>
+
+    <feature_database_provider_support>
+      <title>Database Support for Multiple Providers (Future-Proof)</title>
+      <description>
+        Update database schema to support multiple providers in a future-proof way.
+        This should:
+        - Add provider field to conversations table (TEXT, default: 'claude')
+        - Add provider field to messages/usage_tracking (TEXT, default: 'claude')
+        - Use TEXT field (not ENUM) to allow easy addition of new providers without schema changes
+        - Migration should be safe, idempotent, and backward compatible
+        - All existing records default to 'claude' provider
+        - Add indexes for performance on provider queries
+      </description>
+      <priority>1</priority>
+      <category>functional</category>
+      <implementation_approach>
+        - Create migration: server/migrations/add_provider_support.sql
+        - Use TEXT field (not ENUM) for provider name (allows 'claude', 'mistral', 'openai', etc.)
+        - Default all existing records to 'claude'
+        - Add indexes on provider columns for performance
+        - Make migration idempotent (can run multiple times safely)
+        - Create rollback script if needed
+      </implementation_approach>
+      <test_steps>
+        1. Backup existing database
+        2. Run migration script
+        3. Verify all existing conversations have provider='claude'
+        4. Verify all existing messages have provider='claude' (via usage_tracking)
+        5. Create new conversation with Mistral provider
+        6. Verify provider='mistral' is saved correctly
+        7. Query conversations by provider (test index performance)
+        8. Verify existing Claude conversations still work
+        9. Test rollback script if needed
+      </test_steps>
+    </feature_database_provider_support>
+
+    <feature_unified_chat_endpoint>
+      <title>Unified Chat Endpoint (Works with Any Provider)</title>
+      <description>
+        Update chat endpoints to use ProviderFactory, making them work with any provider.
+        The endpoint should:
+        - Accept provider or model ID in request
+        - Use ProviderFactory to get correct provider
+        - Route request to appropriate provider
+        - Return unified response format
+        - Handle provider-specific errors gracefully
+        - Support streaming for all providers that support it
+      </description>
+      <priority>1</priority>
+      <category>functional</category>
+      <implementation_approach>
+        - Update POST /api/chat to use ProviderFactory
+        - Update POST /api/chat/stream to use ProviderFactory
+        - Extract provider from model ID or accept provider parameter
+        - Route to correct provider instance
+        - Return unified response format
+      </implementation_approach>
+      <test_steps>
+        1. Test POST /api/chat with Claude model (verify no regression)
+        2. Test POST /api/chat with Mistral model
+        3. Test POST /api/chat/stream with Claude (verify streaming still works)
+        4. Test POST /api/chat/stream with Mistral
+        5. Test error handling for invalid provider
+        6. Test error handling for missing API key
+      </test_steps>
+    </feature_unified_chat_endpoint>
+  </new_features>
+
+  <future_extensibility>
+    <openai_provider_example>
+      <title>How to Add OpenAI in the Future</title>
+      <description>
+        To add OpenAI support later, simply follow these steps (NO changes to existing code needed):
+        
+        1. Create server/providers/OpenAIProvider.js extending BaseProvider
+        2. Implement OpenAI API calls (https://api.openai.com/v1/chat/completions)
+        3. Register in ProviderRegistry: ProviderRegistry.register('openai', OpenAIProvider)
+        4. That's it! OpenAI models will automatically appear in model selector.
+        
+        Example OpenAIProvider structure:
+        - Extends BaseProvider
+        - Implements sendMessage() using OpenAI API
+        - Implements streamMessage() for streaming support
+        - Returns models: gpt-4, gpt-3.5-turbo, etc.
+        - Handles OpenAI-specific authentication and errors
+      </description>
+    </openai_provider_example>
+    
+    <other_providers>
+      <note>
+        Same pattern works for any AI provider:
+        - Google Gemini (GeminiProvider)
+        - Cohere (CohereProvider)
+        - Any other AI API that follows similar patterns
+        Just create a new Provider class extending BaseProvider and register it.
+      </note>
+    </other_providers>
+  </future_extensibility>
+
+  <implementation_notes>
+    <code_structure>
+      server/
+        providers/
+          BaseProvider.js          # Abstract base class (NEW)
+          ClaudeProvider.js        # Refactored Claude (extends BaseProvider)
+          MistralProvider.js       # New Mistral (extends BaseProvider)
+          ProviderRegistry.js      # Manages all providers (NEW)
+          ProviderFactory.js       # Creates provider instances (NEW)
+        routes/
+          providers.js            # Unified provider management (NEW)
+          chat.js                  # Updated to use ProviderFactory
+        migrations/
+          add_provider_support.sql # Database migration (NEW)
+    </code_structure>
+    
+    <safety_guidelines>
+      - Refactor Claude code to use BaseProvider WITHOUT changing functionality
+      - All providers are isolated - errors in one don't affect others
+      - Database changes are backward compatible (TEXT field, not ENUM)
+      - Existing conversations default to 'claude' provider
+      - Test Claude thoroughly after refactoring
+      - Use feature flags if needed to enable/disable providers
+      - Log all provider operations separately for debugging
+    </safety_guidelines>
+    
+    <error_handling>
+      - Each provider handles its own errors
+      - Provider errors should NOT affect other providers
+      - Show user-friendly error messages
+      - Log errors with provider context
+      - Don't throw unhandled exceptions
+    </error_handling>
+  </implementation_notes>
+
+  <database_changes>
+    <safe_migrations>
+      <migration_1>
+        <description>Add provider support (TEXT field for extensibility)</description>
+        <sql>
+          -- Add provider column to conversations (TEXT allows any provider name)
+          -- Default to 'claude' for backward compatibility
+          ALTER TABLE conversations 
+          ADD COLUMN provider TEXT DEFAULT 'claude';
+          
+          -- Add provider column to usage_tracking
+          ALTER TABLE usage_tracking
+          ADD COLUMN provider TEXT DEFAULT 'claude';
+          
+          -- Add indexes for performance
+          CREATE INDEX IF NOT EXISTS idx_conversations_provider 
+          ON conversations(provider);
+          
+          CREATE INDEX IF NOT EXISTS idx_usage_tracking_provider 
+          ON usage_tracking(provider);
+        </sql>
+        <rollback>
+          -- Rollback script (use with caution - may cause data issues)
+          DROP INDEX IF EXISTS idx_conversations_provider;
+          DROP INDEX IF EXISTS idx_usage_tracking_provider;
+          -- Note: SQLite doesn't support DROP COLUMN easily
+          -- Would need to recreate table without provider column
+        </rollback>
+        <note>
+          Using TEXT instead of ENUM allows adding new providers (OpenAI, Gemini, etc.)
+          without database schema changes in the future. This is future-proof.
+        </note>
+      </migration_1>
+    </safe_migrations>
+    
+    <data_integrity>
+      - All existing conversations default to provider='claude'
+      - All existing messages default to provider='claude'
+      - Migration is idempotent (can run multiple times safely)
+      - No data loss during migration
+      - Existing queries continue to work
+    </data_integrity>
+  </database_changes>
+
+  <api_endpoints>
+    <new_endpoints>
+      - GET /api/models - Get all models from all configured providers
+      - GET /api/providers - Get list of available providers and their status
+      - POST /api/providers/:provider/key - Set API key for specific provider
+      - POST /api/providers/:provider/test - Test provider API key
+      - GET /api/providers/:provider/status - Get provider configuration status
+      - DELETE /api/providers/:provider/key - Remove provider API key
+    </new_endpoints>
+    
+    <updated_endpoints>
+      - POST /api/chat - Updated to use ProviderFactory (works with any provider)
+        * Accepts: { model: 'model-id', messages: [...], ... }
+        * Provider is determined from model ID or can be specified
+      - POST /api/chat/stream - Updated to use ProviderFactory (streaming for any provider)
+        * Same interface, works with any provider that supports streaming
+    </updated_endpoints>
+  </api_endpoints>
+
+  <dependencies>
+    <backend>
+      - No new dependencies required (use native fetch for Mistral API)
+      - Optional: @mistralai/mistralai (only if provides significant value)
+      - Keep dependencies minimal to avoid conflicts
+    </backend>
+  </dependencies>
+
+  <testing_requirements>
+    <regression_tests>
+      - Verify all existing Claude functionality still works
+      - Test that existing conversations load correctly
+      - Verify Claude model selection still works
+      - Test Claude API endpoints are unaffected
+      - Verify database queries for Claude still work
+      - Test Claude streaming still works
+    </regression_tests>
+    
+    <integration_tests>
+      - Test switching between Claude and Mistral models
+      - Test conversations with different providers
+      - Test error handling doesn't affect other providers
+      - Test migration doesn't break existing data
+      - Test ProviderFactory routes correctly
+      - Test unified model selector with multiple providers
+    </integration_tests>
+    
+    <extensibility_tests>
+      - Verify adding a mock provider is straightforward
+      - Test that ProviderFactory correctly routes to providers
+      - Verify provider isolation (errors don't propagate)
+      - Test that new providers automatically appear in UI
+    </extensibility_tests>
+  </testing_requirements>
+
+  <success_criteria>
+    <functionality>
+      - Claude functionality works exactly as before (no regression)
+      - Mistral models appear in selector and work correctly
+      - Users can switch between Claude and Mistral seamlessly
+      - API key management works for both providers
+      - Database migration is safe and backward compatible
+    </functionality>
+    
+    <extensibility>
+      - Adding a new provider (like OpenAI) requires only creating one new file
+      - No changes needed to existing code when adding providers
+      - Provider architecture is documented and easy to follow
+      - Code is organized and maintainable
+    </extensibility>
+  </success_criteria>
+</project_specification>
