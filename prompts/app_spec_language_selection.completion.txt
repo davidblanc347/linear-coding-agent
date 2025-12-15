@@ -1,0 +1,179 @@
+<project_specification>
+  <project_name>Language selection & i18n completion (FR default, EN/FR only)</project_name>
+
+  <overview>
+    This specification complements the existing "app_spec_language_selection.txt" file.
+    It does NOT replace the original spec. Instead, it adds additional requirements and
+    corrective steps to fully complete the language selection and i18n implementation.
+
+    Main goals:
+    - Support exactly two UI languages: English ("en") and French ("fr").
+    - Make French ("fr") the default language when no preference exists.
+    - Ensure that all user-facing text is translated via the i18n system (no hardcoded strings).
+    - Align the language selector UI with the actual supported languages.
+  </overview>
+
+  <relationship_to_original_spec>
+    - The original file "app_spec_language_selection.txt" defines the initial language selection
+      feature and i18n architecture (context, translation files, etc.).
+    - This completion spec:
+      * keeps that architecture,
+      * tightens some requirements (FR as default),
+      * and adds missing work items (removal of hardcoded English strings, cleanup of extra languages).
+    - The original spec remains valid; this completion spec should be applied on top of it.
+  </relationship_to_original_spec>
+
+  <constraints>
+    - Officially supported UI languages:
+      * English ("en")
+      * French ("fr")
+    - Default language:
+      * French ("fr") MUST be the default language when there is no stored preference.
+    - No other languages (es, de, ja, etc.) are considered part of this completion scope.
+      They may be added later in a separate spec with full translation coverage.
+    - The existing i18n architecture (LanguageContext, useLanguage hook, en.json, fr.json)
+      must be reused, not replaced.
+  </constraints>
+
+  <current_state_summary>
+    - LanguageContext and useLanguage already exist and manage language + translations.
+    - en.json and fr.json exist with a significant subset of strings translated.
+    - Some components already call t('...') correctly (e.g. welcome screen, many settings labels).
+    - However:
+      * Many UI strings are still hardcoded in English in "src/App.jsx".
+      * The language selector UI mentions more languages than are actually implemented.
+      * The default language behavior is not explicitly enforced as French.
+  </current_state_summary>
+
+  <target_state>
+    - French is used as the default language for new/anonymous users.
+    - Only English and French appear in the language selector.
+    - All user-facing UI strings in "src/App.jsx" and its inline components use t('key').
+    - Every key used by the UI is defined in both en.json and fr.json.
+    - No leftover English UI text appears when French is selected.
+  </target_state>
+
+  <implementation_details>
+    <default_language>
+      - In the language context code:
+        * Ensure there is a constant DEFAULT_LANGUAGE set to "fr".
+          Example:
+            const DEFAULT_LANGUAGE = 'fr';
+      - Initial language resolution MUST follow this order:
+        1. If a valid language ("en" or "fr") is found in localStorage, use it.
+        2. Otherwise, fall back to DEFAULT_LANGUAGE = "fr".
+      - This guarantees that first-time users and users without a stored preference see the UI in French.
+    </default_language>
+
+    <supported_languages>
+      - SUPPORTED_LANGUAGES must contain exactly:
+        * { code: 'en', name: 'English', nativeName: 'English' }
+        * { code: 'fr', name: 'French', nativeName: 'Français' }
+      - The Settings > Language dropdown must iterate only over SUPPORTED_LANGUAGES.
+      - Any explicit references to "es", "de", "ja" as selectable languages must be removed
+        or commented out as "future languages" (but not shown to users).
+    </supported_languages>
+
+    <hardcoded_strings_audit>
+      - Perform a systematic audit of "src/App.jsx" to identify every user-visible English string
+        that is still hardcoded. Typical areas include:
+        * ThemePreview sample messages (e.g. “Hello! Can you help me with something?”).
+        * About section in Settings > General (product name, description, “Built with …” text).
+        * Default model description and option labels.
+        * Project modals: “Cancel”, “Save Changes”, etc.
+        * Any toasts, confirmation messages, help texts, or labels still in English.
+      - For each identified string:
+        * Define a stable translation key (e.g. "themePreview.sampleUser1",
+          "settings.defaultModelDescription", "projectModal.cancel", "projectModal.saveChanges").
+        * Add this key to both en.json and fr.json.
+    </hardcoded_strings_audit>
+
+    <refactor_to_use_t>
+      - Replace each hardcoded string with a call to the translation function, for example:
+        BEFORE:
+          <p>Hello! Can you help me with something?</p>
+        AFTER:
+          <p>{t('themePreview.sampleUser1')}</p>
+      - Ensure that:
+        * The component (or function) imports useLanguage.
+        * const { t } = useLanguage() is declared in the correct scope.
+      - Apply this systematically across:
+        * Settings / General and Appearance sections.
+        * Theme preview component.
+        * Project-related modals.
+        * Any remaining banners, tooltips, or messages defined inside App.jsx.
+    </refactor_to_use_t>
+
+    <translation_files_update>
+      - Update translations/en.json:
+        * Add all new keys with natural English text.
+      - Update translations/fr.json:
+        * Add the same keys with accurate French translations.
+      - Goal:
+        * For every key used in code, both en.json and fr.json must contain a value.
+    </translation_files_update>
+
+    <fallback_behavior>
+      - Keep existing fallback behavior in LanguageContext:
+        * If a key is missing in the current language, fall back to English.
+        * If the key is also missing in English, return the key and log a warning.
+      - However, after this completion spec is implemented:
+        * No fallback warnings should appear in normal operation, because all keys are defined.
+    </fallback_behavior>
+
+    <settings_language_section>
+      - In the Settings > General tab:
+        * The language section heading must be translated via t('settings.language').
+        * Any helper text/description for the language selector must also use t('...').
+        * The select's value is bound to the language from useLanguage.
+        * The onChange handler calls setLanguage(newLanguageCode).
+      - Expected behavior:
+        * Switching to French instantly updates the UI and saves "fr" in localStorage.
+        * Switching to English instantly updates the UI and saves "en" in localStorage.
+    </settings_language_section>
+  </implementation_details>
+
+  <testing_plan>
+    <manual_tests>
+      1. Clear the language preference from localStorage.
+      2. Load the application:
+         - Confirm that the UI is initially in French (FR as default).
+      3. Open the Settings modal and navigate to the General tab.
+         - Verify that the language selector shows only "Français" and "English".
+      4. Switch to English:
+         - Verify that Sidebar, Settings, Welcome screen, Chat area, and modals are all in English.
+      5. Refresh the page:
+         - Confirm that the UI stays in English (preference persisted).
+      6. Switch back to French and repeat quick checks to confirm all UI text is in French.
+    </manual_tests>
+
+    <coverage_checks>
+      - Check in both languages:
+        * Main/empty state (welcome screen).
+        * Chat area (input placeholder, send/stop/regenerate buttons).
+        * Sidebar (navigation sections, search placeholder, pinned/archived labels).
+        * Settings (all tabs).
+        * Project creation and edit modals.
+        * Delete/confirmation dialogs and any share/export flows.
+      - Confirm:
+        * In French, there is no remaining English UI text.
+        * In English, there is no accidental French UI text.
+    </coverage_checks>
+
+    <regression>
+      - Verify:
+        * Chat behavior is unchanged except for translated labels/text.
+        * Project operations (create/update/delete) still work.
+        * No new console errors appear when switching languages or reloading.
+    </regression>
+  </testing_plan>
+
+  <success_criteria>
+    - "app_spec_language_selection.txt" remains the original base spec.
+    - This completion spec ("app_spec_language_selection.completion.txt") is fully implemented.
+    - French is used as default language when no preference exists.
+    - Only English and French are presented in the language selector.
+    - All user-facing strings in App.jsx go through t('key') and exist in both en.json and fr.json.
+    - No stray English text is visible when the French language is selected.
+  </success_criteria>
+</project_specification>

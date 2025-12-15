@@ -42,11 +42,13 @@ async def run_agent_session(
     Returns:
         (status, response_text) where status is:
         - "continue" if agent should continue working
+        - "done" if the project appears to be complete
         - "error" if an error occurred
     """
     print("Sending prompt to Claude Agent SDK...\n")
 
     try:
+        project_done = False
         # Send the query
         await client.query(message)
 
@@ -63,7 +65,14 @@ async def run_agent_session(
                     if block_type == "TextBlock" and hasattr(block, "text"):
                         response_text += block.text
                         print(block.text, end="", flush=True)
+                        # Early guard: if the assistant declares the project feature-complete,
+                        # we stop streaming and end the loop as "done" to avoid extra work.
+                        if "feature-complete" in block.text.lower():
+                            project_done = True
+                            break
                     elif block_type == "ToolUseBlock" and hasattr(block, "name"):
+                        if project_done:
+                            break
                         print(f"\n[Tool: {block.name}]", flush=True)
                         if hasattr(block, "input"):
                             input_str = str(block.input)
@@ -74,6 +83,9 @@ async def run_agent_session(
 
             # Handle UserMessage (tool results)
             elif msg_type == "UserMessage" and hasattr(msg, "content"):
+                if project_done:
+                    # Ignore further tool results once we've determined the project is done
+                    continue
                 for block in msg.content:
                     block_type = type(block).__name__
 
@@ -92,7 +104,20 @@ async def run_agent_session(
                             # Tool succeeded - just show brief confirmation
                             print("   [Done]", flush=True)
 
+            if project_done:
+                # Stop processing further streamed messages
+                break
+
         print("\n" + "-" * 70 + "\n")
+
+        # Detect completion signals in the assistant's response to stop the loop
+        lower_text = response_text.lower()
+        if (
+            "feature-complete" in lower_text
+            or ("all" in lower_text and "issues" in lower_text and "completed" in lower_text)
+        ):
+            return "done", response_text
+
         return "continue", response_text
 
     except Exception as e:
@@ -204,6 +229,11 @@ async def run_autonomous_agent(
             print("\nSession encountered an error")
             print("Will retry with a fresh session...")
             await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+
+        elif status == "done":
+            print("\nAgent reports that the project is complete (all issues done).")
+            print_progress_summary(project_dir)
+            break
 
         # Small delay between sessions
         if max_iterations is None or iteration < max_iterations:
