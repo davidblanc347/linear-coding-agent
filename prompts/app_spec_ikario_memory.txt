@@ -1,0 +1,663 @@
+<project_specification>
+  <project_name>Extension MCP Ikario Memory - Claude.ai Clone</project_name>
+
+  <overview>
+    Extension du projet "Claude.ai Clone" existant pour intégrer la mémoire conversationnelle via le protocole MCP (Model Context Protocol) avec le serveur Ikario RAG.
+
+    Cette extension ajoute au clone Claude.ai existant la capacité pour le LLM de :
+    - Sauvegarder automatiquement les conversations importantes dans une mémoire vectorielle (ChromaDB)
+    - Rechercher sémantiquement dans ses souvenirs passés pour enrichir les réponses
+    - Tracer l'évolution de concepts discutés au fil du temps
+    - Vérifier la cohérence de nouvelles affirmations avec l'historique des conversations
+
+    Le projet Claude.ai Clone dispose déjà de :
+    - Interface de chat complète avec streaming SSE
+    - Gestion de conversations et messages (base SQLite)
+    - Intégration Claude API avec Anthropic SDK
+    - Frontend React + Vite + Tailwind
+    - Backend Node.js + Express
+
+    Cette extension ajoute simplement l'intégration du client MCP Ikario RAG pour donner une mémoire sémantique au LLM.
+  </overview>
+
+  <technology_stack>
+    <existing_stack>
+      Le projet dispose déjà de :
+      - Frontend : React + Vite + Tailwind CSS (port 4300)
+      - Backend : Node.js + Express + SQLite (port 4301)
+      - API Claude : Anthropic SDK avec streaming SSE
+      - Gestion de conversations : base SQLite avec tables conversations et messages
+    </existing_stack>
+
+    <new_integration>
+      <mcp_client>
+        - Package : @modelcontextprotocol/sdk (client MCP Node.js)
+        - Serveur MCP : ikario_rag/server.py (Python)
+        - Communication : stdio (stdin/stdout avec JSON-RPC 2.0)
+        - Localisation : chemin configuré dans .env (MCP_IKARIO_SERVER_PATH)
+      </mcp_client>
+
+      <mcp_tools>
+        Les 4 outils MCP Ikario disponibles :
+        1. search_memories : Recherche sémantique dans les souvenirs
+        2. add_thought : Sauvegarde une pensée/conversation avec métadonnées
+        3. trace_concept_evolution : Trace l'évolution temporelle d'un concept
+        4. check_consistency : Vérifie la cohérence d'une affirmation avec l'historique
+      </mcp_tools>
+
+      <memory_database>
+        - Base vectorielle : ChromaDB (gérée par serveur MCP)
+        - Embeddings : SentenceTransformer all-MiniLM-L6-v2 (384 dimensions)
+        - Stockage : ./ikario_rag/index/ (persistance sur disque)
+        - Métadonnées : category, tags, emotions, concepts, date
+      </memory_database>
+    </new_integration>
+  </technology_stack>
+
+  <prerequisites>
+    <existing_project>
+      - Projet Claude.ai Clone déjà fonctionnel
+      - Base SQLite avec tables conversations et messages opérationnelles
+      - API endpoints Claude existants (/api/claude/chat, /api/conversations/*)
+      - Frontend React avec composants de chat déjà en place
+    </existing_project>
+
+    <mcp_server_setup>
+      - Serveur MCP Ikario RAG installé dans ./ikario_rag/
+      - Python 3.11+ avec dépendances : chromadb, sentence-transformers, mcp
+      - Serveur testé et fonctionnel (peut être lancé manuellement via python server.py)
+      - Base ChromaDB initialisée dans ./ikario_rag/index/
+    </mcp_server_setup>
+
+    <backend_dependencies>
+      - Installer @modelcontextprotocol/sdk dans le backend
+      - Ajouter variables d'environnement au .env :
+        * MCP_IKARIO_SERVER_PATH=path/to/ikario_rag/server.py
+        * MCP_MEMORY_ENABLED=true (pour activer/désactiver la fonctionnalité)
+    </backend_dependencies>
+  </prerequisites>
+
+  <core_features>
+    <feature_1>
+      <title>Module backend de connexion MCP Ikario</title>
+      <description>
+        Créer un module backend qui initialise et gère la connexion au serveur MCP Ikario RAG.
+
+        Fonctionnalités :
+        - Module server/services/mcpClient.js qui encapsule le client MCP
+        - Initialisation au démarrage du serveur Express
+        - Lecture de la configuration depuis .env (MCP_IKARIO_SERVER_PATH)
+        - Gestion du cycle de vie de la connexion (connect, disconnect, reconnect)
+        - Pool de connexions ou singleton pour éviter les multiples connexions
+        - Gestion des erreurs et timeout
+        - Logging détaillé des appels MCP
+
+        Technique :
+        - Import de @modelcontextprotocol/sdk
+        - StdioServerParameters avec command="python" et args=[server_path]
+        - stdio_client() pour créer la connexion
+        - ClientSession pour gérer les appels
+        - Export de fonctions : initMCP(), getMCPClient(), closeMCP()
+        - Initialiser dans server/index.js au démarrage
+
+        Intégration :
+        - S'intègre dans server/index.js existant
+        - Nouveau fichier server/services/mcpClient.js
+        - Pas de modification de la base SQLite
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Configurer MCP_IKARIO_SERVER_PATH dans .env
+        2. Démarrer le serveur backend
+        3. Vérifier les logs : "MCP Ikario client connected"
+        4. Vérifier qu'aucune erreur n'est levée
+        5. Arrêter le serveur et vérifier la déconnexion propre
+        6. Tester avec un mauvais chemin et vérifier la gestion d'erreur
+      </test_steps>
+    </feature_1>
+
+    <feature_2>
+      <title>Service wrapper pour les 4 outils MCP</title>
+      <description>
+        Créer un service backend qui expose les 4 outils MCP Ikario sous forme de fonctions JavaScript utilisables dans l'application.
+
+        Fonctionnalités :
+        - Module server/services/memoryService.js
+        - 4 fonctions async qui wrappent les appels MCP :
+          * searchMemories(query, n_results, filter_category)
+          * addThought(content, context)
+          * traceConceptEvolution(concept, limit)
+          * checkConsistency(statement)
+        - Gestion des erreurs spécifiques à chaque outil
+        - Parsing et formatage des réponses MCP
+        - Validation des paramètres avant appel
+        - Logging des appels et résultats
+
+        Technique :
+        - Import de mcpClient.getMCPClient()
+        - Appels via client.call_tool(tool_name, arguments)
+        - Parsing des réponses (format TextContent)
+        - Conversion en objets JavaScript utilisables
+        - Export des 4 fonctions
+
+        Intégration :
+        - Nouveau fichier server/services/memoryService.js
+        - Utilisé par les routes API
+        - Pas de modification de l'existant
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Créer un script de test qui importe memoryService
+        2. Tester searchMemories("test", 5) et vérifier le retour
+        3. Tester addThought() avec un contenu simple
+        4. Vérifier que les erreurs sont bien catchées
+        5. Vérifier les logs des appels MCP
+        6. Tester avec MCP désactivé et vérifier le fallback
+      </test_steps>
+    </feature_2>
+
+    <feature_3>
+      <title>Routes API pour les outils MCP</title>
+      <description>
+        Créer les routes Express qui exposent les 4 outils MCP via l'API REST existante.
+
+        Fonctionnalités :
+        - Nouveau routeur server/routes/memory.js
+        - 4 routes POST :
+          * /api/memory/search (search_memories)
+          * /api/memory/add (add_thought)
+          * /api/memory/evolution (trace_concept_evolution)
+          * /api/memory/consistency (check_consistency)
+        - Validation des paramètres req.body
+        - Appel des fonctions de memoryService
+        - Réponses JSON standardisées
+        - Gestion d'erreurs avec codes HTTP appropriés (400, 500)
+        - Middleware optionnel d'authentification
+
+        Technique :
+        - express.Router() dans server/routes/memory.js
+        - Import de memoryService
+        - try/catch pour chaque route
+        - Validation avec express-validator ou manuelle
+        - Monter le routeur dans server/index.js : app.use('/api/memory', memoryRoutes)
+
+        Intégration :
+        - Nouveau fichier server/routes/memory.js
+        - Import dans server/index.js existant
+        - S'ajoute aux routes existantes (/api/conversations, /api/claude/*)
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Tester POST /api/memory/search avec Postman ou curl
+        2. Vérifier la réponse JSON avec résultats de recherche
+        3. Tester POST /api/memory/add avec un contenu simple
+        4. Vérifier que la pensée est ajoutée dans ChromaDB
+        5. Tester les erreurs (paramètres manquants)
+        6. Vérifier les logs et codes HTTP
+      </test_steps>
+    </feature_3>
+
+    <feature_4>
+      <title>Bouton "Sauvegarder dans la mémoire" dans le chat</title>
+      <description>
+        Ajouter un bouton discret dans l'interface de chat pour sauvegarder manuellement une conversation dans la mémoire.
+
+        Fonctionnalités :
+        - Bouton icône "cerveau" ou "étoile" près de chaque message assistant
+        - Au clic : ouvre un petit modal/popover
+        - Formulaire rapide : Catégorie (select) + Tags (input, optionnel)
+        - Bouton "Sauvegarder"
+        - Sauvegarde la conversation complète (tous les messages de la conversation active)
+        - Notification toast de confirmation
+        - Bouton devient "Déjà sauvegardé" après sauvegarde (state local)
+
+        Technique :
+        - Ajout de bouton dans le composant Message existant
+        - State local pour modal (useState)
+        - Appel API POST /api/memory/add au submit
+        - Utilisation de conversation_id pour récupérer tous les messages
+        - Toast notification avec react-hot-toast ou équivalent
+
+        Intégration :
+        - Modifier le composant Message/ChatMessage existant
+        - Ajouter un icône Lucide React (Brain, Star, ou Bookmark)
+        - Modal/Popover avec Headless UI ou simple div conditionnelle
+      </description>
+      <priority>2</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Avoir une conversation dans le chat
+        2. Voir les boutons "Sauvegarder" apparaître
+        3. Cliquer sur un bouton et voir le modal
+        4. Sélectionner catégorie "thematique" et ajouter des tags
+        5. Cliquer "Sauvegarder" et voir la notification
+        6. Vérifier que le bouton devient "Déjà sauvegardé"
+        7. Rechercher la conversation sauvegardée via l'API
+      </test_steps>
+    </feature_4>
+
+    <feature_5>
+      <title>Panel de recherche de souvenirs dans la sidebar</title>
+      <description>
+        Ajouter une section de recherche de souvenirs dans la sidebar gauche existante.
+
+        Fonctionnalités :
+        - Nouvel onglet/section "Mémoire" dans la sidebar existante (après Conversations)
+        - Champ de recherche avec placeholder "Rechercher dans mes souvenirs..."
+        - Liste des résultats affichés en dessous
+        - Pour chaque résultat : Score | Extrait (2 lignes) | Date | Tags
+        - Clic sur un résultat : affiche le détail complet dans un modal
+        - Filtre par catégorie (3 boutons radio : Toutes | Fondatrice | Thématique | Contextuelle)
+        - Maximum 10 résultats affichés
+
+        Technique :
+        - Ajouter section dans Sidebar.jsx existant
+        - Nouvel état pour searchQuery et searchResults
+        - Debounce sur l'input (useDebounce hook)
+        - Appel API GET /api/memory/search?q={query}&category={filter}
+        - Affichage avec Tailwind, style similaire à la liste de conversations
+        - Modal pour détail (réutiliser un modal existant si possible)
+
+        Intégration :
+        - Modification de src/components/Sidebar.jsx existant
+        - Ajouter un toggle pour afficher/masquer la section Mémoire
+        - S'intègre visuellement avec le design existant
+      </description>
+      <priority>2</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Ouvrir l'application et voir la section "Mémoire" dans la sidebar
+        2. Taper une requête dans le champ de recherche
+        3. Voir les résultats apparaître avec scores et tags
+        4. Cliquer sur un résultat et voir le modal de détail
+        5. Tester les filtres par catégorie
+        6. Vérifier que la recherche est debounced (pas d'appel à chaque lettre)
+        7. Vérifier le style cohérent avec le design existant
+      </test_steps>
+    </feature_5>
+
+    <feature_6>
+      <title>Sauvegarde automatique des conversations importantes</title>
+      <description>
+        Implémenter la sauvegarde automatique des conversations marquées comme "importantes" ou après un certain nombre de messages.
+
+        Fonctionnalités :
+        - Détection automatique : conversations de >10 messages OU marquées "épinglées"
+        - Déclenchement : en background après chaque nouveau message assistant
+        - Extraction automatique basique :
+          * Catégorie : "contextuelle" par défaut
+          * Tags : mots en majuscules, mots >8 caractères, mots répétés
+          * Date : timestamp du message
+        - Sauvegarde silencieuse (pas de modal, juste log backend)
+        - Flag dans table conversations : has_memory_backup BOOLEAN
+
+        Technique :
+        - Hook/middleware dans l'endpoint POST /api/conversations/:id/messages
+        - Après insertion du message assistant : vérifier conditions
+        - Si conditions remplies : appel async memoryService.addThought()
+        - Extraction tags basique avec regex/split
+        - UPDATE conversations SET has_memory_backup = 1 WHERE id = ?
+
+        Intégration :
+        - Modification de server/routes/conversations.js (endpoint POST messages)
+        - Ajout colonne has_memory_backup dans table conversations (migration)
+        - Appel non-bloquant (Promise.then, pas de await)
+      </description>
+      <priority>3</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Créer une nouvelle conversation
+        2. Envoyer >10 messages
+        3. Vérifier dans les logs qu'une sauvegarde automatique est déclenchée
+        4. Rechercher la conversation dans l'API /api/memory/search
+        5. Vérifier que has_memory_backup = 1 dans la DB
+        6. Tester avec une conversation épinglée (<10 messages)
+        7. Vérifier que les tags sont extraits correctement
+      </test_steps>
+    </feature_6>
+
+    <feature_7>
+      <title>Indicateur visuel de mémoire active</title>
+      <description>
+        Afficher un indicateur visuel dans l'interface pour montrer que la mémoire est active et utilisée.
+
+        Fonctionnalités :
+        - Icône "cerveau" ou "mémoire" dans le header de l'application
+        - État : Vert (connecté) | Orange (déconnecté) | Gris (désactivé)
+        - Tooltip au survol : "Mémoire active - X souvenirs" ou "Mémoire déconnectée"
+        - Clic sur l'icône : ouvre un mini dashboard avec stats rapides
+          * Nombre total de souvenirs
+          * Dernière sauvegarde (timestamp)
+          * Connexion MCP : OK/KO
+        - Animation discrète lors d'une sauvegarde (pulse)
+
+        Technique :
+        - Composant React MemoryIndicator dans Header.jsx
+        - Appel API GET /api/memory/stats toutes les 30 secondes (setInterval)
+        - État pour connectionStatus : 'connected' | 'disconnected' | 'disabled'
+        - Icône Brain de Lucide React avec couleurs conditionnelles
+        - Popover Headless UI pour le mini dashboard
+
+        Intégration :
+        - Ajout dans src/components/Header.jsx existant
+        - S'intègre à côté du model selector
+        - Style cohérent avec le design claude.ai
+      </description>
+      <priority>3</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Voir l'icône mémoire dans le header (vert si connecté)
+        2. Survoler l'icône et lire le tooltip
+        3. Cliquer sur l'icône et voir le mini dashboard
+        4. Vérifier les stats (nombre de souvenirs, dernière sauvegarde)
+        5. Arrêter le serveur MCP et voir l'icône devenir orange
+        6. Sauvegarder une conversation et voir l'animation pulse
+        7. Vérifier le polling des stats (console network toutes les 30s)
+      </test_steps>
+    </feature_7>
+
+    <feature_8>
+      <title>Configuration des Tools Claude API pour la mémoire</title>
+      <description>
+        Exposer les outils MCP comme Tools dans l'API Claude pour que le LLM puisse décider de façon autonome d'utiliser sa mémoire.
+
+        Fonctionnalités :
+        - Définir 2 tools principaux pour l'API Claude :
+          1. save_memory : Sauvegarder une conversation ou pensée
+          2. search_memories : Rechercher dans les souvenirs passés
+        - Chaque tool avec description claire et JSON schema
+        - Tools toujours disponibles dans les appels Claude (sauf si désactivé)
+        - Gestion du cycle tool_use → tool_result
+        - Le LLM décide de façon autonome quand sauvegarder/rechercher
+
+        Définition des tools :
+        - save_memory :
+          * description: "Sauvegarde cette conversation ou une pensée importante dans ta mémoire à long terme"
+          * paramètres: content (requis), category (requis: fondatrice|thematique|contextuelle), tags (array), concepts (array), emotions (array optionnel)
+        - search_memories :
+          * description: "Recherche dans tes souvenirs de conversations passées"
+          * paramètres: query (requis), n_results (optionnel, default 5), filter_category (optionnel)
+
+        Technique :
+        - Modification de server/routes/claude.js
+        - Définir const MEMORY_TOOLS = [{...}, {...}]
+        - Ajouter tools: MEMORY_TOOLS dans anthropic.messages.create()
+        - Gérer response.stop_reason === 'tool_use'
+        - Extraire tool calls, exécuter via memoryService, renvoyer tool_result
+        - Boucle jusqu'à response finale (stop_reason === 'end_turn')
+
+        Intégration :
+        - Modification de server/routes/claude.js existant
+        - Nouveau fichier server/config/memoryTools.js pour définitions tools
+        - Handler de tool execution dans le streaming SSE
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Dire à Claude "Cette conversation est importante, sauvegarde-la"
+        2. Vérifier dans les logs que Claude appelle tool save_memory
+        3. Vérifier que le backend exécute add_thought via MCP
+        4. Vérifier que Claude confirme la sauvegarde
+        5. Demander "Que sais-tu sur X ?" et voir Claude appeler search_memories
+        6. Vérifier que les souvenirs sont retournés et utilisés dans la réponse
+        7. Tester avec MCP_MEMORY_ENABLED=false
+      </test_steps>
+    </feature_8>
+
+    <feature_9>
+      <title>Handler de Tool Execution pour les outils mémoire</title>
+      <description>
+        Implémenter le handler qui exécute les tool calls de Claude et retourne les résultats.
+
+        Fonctionnalités :
+        - Fonction executeTool(tool_name, tool_input) qui route vers memoryService
+        - Support de save_memory → memoryService.addThought()
+        - Support de search_memories → memoryService.searchMemories()
+        - Formatage des résultats en tool_result compatible Claude API
+        - Gestion des erreurs (retourner error dans tool_result)
+        - Logging de chaque exécution de tool
+        - Timeout de 10 secondes par tool call
+
+        Workflow :
+        1. Claude retourne stop_reason='tool_use' + content avec tool_use block
+        2. Backend extrait tool_name et tool_input
+        3. executeTool() appelle la fonction MCP correspondante
+        4. Résultat formaté en tool_result
+        5. Nouvelle requête à Claude avec tool_result
+        6. Claude utilise le résultat pour sa réponse finale
+
+        Technique :
+        - Fonction async executeTool(tool_name, tool_input)
+        - Switch sur tool_name pour router
+        - Appel des fonctions memoryService
+        - Formatage : { type: "tool_result", tool_use_id, content }
+        - Gestion try/catch avec error reporting
+
+        Intégration :
+        - Nouveau fichier server/services/toolExecutor.js
+        - Appelé depuis server/routes/claude.js dans la boucle de streaming
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Tester save_memory avec tous les paramètres
+        2. Vérifier que le tool_result est retourné correctement
+        3. Tester search_memories avec query simple
+        4. Vérifier le formatage des résultats
+        5. Tester avec des paramètres invalides (gestion erreur)
+        6. Vérifier les logs d'exécution
+        7. Tester le timeout avec un MCP server lent
+      </test_steps>
+    </feature_9>
+
+    <feature_10>
+      <title>System Prompt enrichi pour guider l'utilisation de la mémoire</title>
+      <description>
+        Ajouter des instructions au system prompt pour que Claude utilise intelligemment sa mémoire.
+
+        Fonctionnalités :
+        - Instructions claires sur quand sauvegarder :
+          * Conversations fondatrices (premières interactions, moments clés)
+          * Discussions thématiques approfondies (philosophie, science, art)
+          * Sur demande explicite de l'utilisateur
+        - Instructions sur quand rechercher :
+          * Questions qui font référence au passé
+          * Sujets déjà discutés
+          * Pour enrichir les réponses avec du contexte
+        - Guidance sur les métadonnées :
+          * Catégories : quand utiliser fondatrice vs thematique vs contextuelle
+          * Tags : extraire les concepts clés
+          * Émotions : optionnelles mais enrichissantes
+        - Ton naturel : ne pas annoncer systématiquement les sauvegardes
+
+        System Prompt ajouté :
+        ```
+        Tu as accès à une mémoire persistante via deux outils :
+
+        1. save_memory : Sauvegarde les conversations importantes
+           - Utilise category='fondatrice' pour les moments clés et premières interactions
+           - Utilise category='thematique' pour les discussions approfondies sur des concepts
+           - Utilise category='contextuelle' pour les échanges quotidiens intéressants
+           - Extrais des tags pertinents (concepts clés, mots importants)
+
+        2. search_memories : Recherche dans tes souvenirs
+           - Utilise-le quand l'utilisateur fait référence à des discussions passées
+           - Ou pour enrichir ta réponse avec du contexte antérieur
+
+        Utilise ces outils de façon naturelle et autonome. Tu n'es pas obligé d'annoncer
+        chaque sauvegarde, sauf si c'est pertinent dans la conversation.
+        ```
+
+        Technique :
+        - Ajout au system prompt existant dans server/routes/claude.js
+        - Concaténation avec custom instructions si présentes
+        - Paramètre enable_memory_tools (default: true) pour activer/désactiver
+
+        Intégration :
+        - Modification du system prompt dans server/routes/claude.js
+        - S'ajoute aux instructions existantes
+      </description>
+      <priority>2</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Avoir une conversation initiale et voir si Claude la sauvegarde
+        2. Vérifier qu'il utilise la bonne catégorie
+        3. Faire référence à une discussion passée et voir s'il recherche
+        4. Vérifier que les tags extraits sont pertinents
+        5. Tester que Claude ne sur-annonce pas les sauvegardes
+        6. Demander explicitement une sauvegarde et vérifier
+        7. Vérifier que les émotions sont ajoutées quand pertinent
+      </test_steps>
+    </feature_10>
+  </core_features>
+
+  <ui_design>
+    <integration_notes>
+      Cette extension s'intègre dans le design existant du clone Claude.ai.
+      Tous les nouveaux composants doivent respecter le design system existant.
+    </integration_notes>
+
+    <new_components>
+      - MemoryIndicator : Icône Brain dans le header avec état coloré (vert/orange/gris)
+      - MemorySaveButton : Bouton discret dans chaque message assistant pour sauvegarde manuelle
+      - MemorySearchPanel : Section dans la sidebar pour rechercher dans les souvenirs
+      - MemoryDetailModal : Modal pour afficher le détail complet d'un souvenir
+      - SaveMemoryModal : Petit modal/popover pour choisir catégorie et tags avant sauvegarde
+    </new_components>
+
+    <color_scheme>
+      Utiliser les couleurs existantes du clone Claude.ai, avec ajouts pour la mémoire :
+      - Indicateur mémoire : Vert (#10B981) connecté | Orange (#F59E0B) déconnecté | Gris (#6B7280) désactivé
+      - Badges catégories :
+        * Fondatrice: Or/Jaune (#F59E0B)
+        * Thématique: Bleu (#3B82F6)
+        * Contextuelle: Gris (#6B7280)
+      - Scores de pertinence : Gradient vert (#10B981) à rouge (#EF4444)
+    </color_scheme>
+
+    <design_consistency>
+      - Respecter la palette claude.ai existante (orange/amber #CC785C comme accent)
+      - Utiliser les mêmes composants Tailwind que l'existant
+      - Polices : même font stack que le projet (Inter/SF Pro)
+      - Boutons : même style que les boutons existants
+      - Modals : réutiliser les modals Headless UI existants si possible
+    </design_consistency>
+  </ui_design>
+
+  <api_endpoints>
+    <note>
+      Ces endpoints s'ajoutent aux endpoints existants du clone Claude.ai.
+      Tous les endpoints mémoire sont sous le préfixe /api/memory.
+    </note>
+
+    <endpoint>
+      <method>POST</method>
+      <path>/api/memory/search</path>
+      <description>Rechercher sémantiquement dans les souvenirs (wrapper de search_memories MCP)</description>
+      <request_body>{"query": "string", "n_results": number (opt, default 5), "filter_category": "string (opt)"}</request_body>
+      <response>{"results": [{content, metadata, relevance_score, distance}]}</response>
+    </endpoint>
+
+    <endpoint>
+      <method>POST</method>
+      <path>/api/memory/add</path>
+      <description>Ajouter une pensée/conversation manuellement (wrapper de add_thought MCP)</description>
+      <request_body>{"content": "string", "context": {category, tags, emotions, concepts}}</request_body>
+      <response>{"id": "string", "message": "string"}</response>
+    </endpoint>
+
+    <endpoint>
+      <method>POST</method>
+      <path>/api/memory/evolution</path>
+      <description>Tracer l'évolution d'un concept (wrapper de trace_concept_evolution MCP)</description>
+      <request_body>{"concept": "string", "limit": number (opt, default 10)}</request_body>
+      <response>{"timeline": [{date, content, evolution}]}</response>
+    </endpoint>
+
+    <endpoint>
+      <method>POST</method>
+      <path>/api/memory/consistency</path>
+      <description>Vérifier cohérence d'une affirmation (wrapper de check_consistency MCP)</description>
+      <request_body>{"statement": "string"}</request_body>
+      <response>{"consistency_score": number, "contradictions": [...]}}</response>
+    </endpoint>
+
+    <endpoint>
+      <method>GET</method>
+      <path>/api/memory/stats</path>
+      <description>Obtenir statistiques basiques sur la mémoire</description>
+      <request_body>N/A</request_body>
+      <response>{"connected": boolean, "total_memories": number (approx), "last_save": timestamp}</response>
+    </endpoint>
+
+    <existing_endpoints_modified>
+      <endpoint>
+        <method>POST</method>
+        <path>/api/claude/chat</path>
+        <modification>Ajouter logique d'enrichissement automatique avec souvenirs avant appel Claude</modification>
+      </endpoint>
+
+      <endpoint>
+        <method>POST</method>
+        <path>/api/conversations/:id/messages</path>
+        <modification>Ajouter logique de sauvegarde automatique après insertion message assistant</modification>
+      </endpoint>
+    </existing_endpoints_modified>
+  </api_endpoints>
+
+  <database_schema>
+    <chromadb>
+      La base vectorielle ChromaDB est entièrement gérée par le serveur MCP Ikario.
+      Le backend Node.js n'y accède pas directement, seulement via les outils MCP.
+      Emplacement : ./ikario_rag/index/
+    </chromadb>
+
+    <sqlite_modifications>
+      Modifications mineures à la base SQLite existante du clone Claude.ai :
+
+      <table>
+        <name>conversations (table existante - ajouter colonne)</name>
+        <new_column>has_memory_backup INTEGER DEFAULT 0</new_column>
+        <description>Flag indiquant si la conversation a été sauvegardée dans la mémoire</description>
+      </table>
+
+      <table>
+        <name>conversation_settings (table existante - optionnel)</name>
+        <new_column>enable_memory INTEGER DEFAULT 1</new_column>
+        <description>Active/désactive l'enrichissement automatique avec souvenirs pour cette conversation</description>
+      </table>
+    </sqlite_modifications>
+
+    <no_new_tables>
+      Cette extension ne crée pas de nouvelles tables SQLite.
+      Toute la mémoire sémantique est dans ChromaDB (géré par MCP).
+    </no_new_tables>
+  </database_schema>
+
+  <deployment>
+    <development>
+      Le projet Claude.ai Clone est déjà configuré et déployé.
+      Cette extension ajoute simplement :
+      - Le serveur MCP Ikario RAG (Python) qui doit tourner en background ou être lancé par le backend
+      - Variables d'environnement pour la connexion MCP
+    </development>
+
+    <environment_variables>
+      Ajouter au .env existant :
+      - MCP_IKARIO_SERVER_PATH : Chemin absolu vers ikario_rag/server.py
+      - MCP_MEMORY_ENABLED : true | false (pour activer/désactiver la feature)
+    </environment_variables>
+
+    <dependencies>
+      Backend (package.json) :
+      - Ajouter : @modelcontextprotocol/sdk (client MCP Node.js)
+
+      MCP Server (déjà installé) :
+      - Python 3.11+
+      - chromadb, sentence-transformers, numpy, mcp
+    </dependencies>
+  </deployment>
+</project_specification>
