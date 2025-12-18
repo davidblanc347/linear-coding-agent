@@ -1,0 +1,984 @@
+<project_specification>
+  <project_name>Extended Thinking - Claude.ai Clone</project_name>
+
+  <overview>
+    Extension du projet "Claude.ai Clone" existant pour intégrer la fonctionnalité Extended Thinking de Claude, permettant au modèle d'exposer son processus de raisonnement étape par étape.
+
+    Extended Thinking est une capacité de Claude qui génère des blocs "thinking" contenant son raisonnement interne avant de fournir sa réponse finale. Cette fonctionnalité améliore significativement la qualité des réponses pour les tâches complexes comme :
+    - Mathématiques et calculs complexes
+    - Programmation et débogage
+    - Analyse approfondie de documents
+    - Raisonnement logique multi-étapes
+    - Résolution de problèmes complexes
+
+    Le projet Claude.ai Clone dispose déjà de :
+    - Interface de chat complète avec streaming SSE
+    - Gestion de conversations et messages (base SQLite)
+    - Intégration Claude API avec Anthropic SDK
+    - Support des tools (memory tools déjà implémentés)
+    - Frontend React + Vite + Tailwind
+    - Backend Node.js + Express
+
+    Cette extension ajoute :
+    - Support du paramètre "thinking" dans les appels Claude API
+    - Affichage des blocs thinking dans l'interface
+    - Contrôles utilisateur pour activer/désactiver thinking
+    - Ajustement du budget thinking (1K-32K tokens)
+    - Streaming des thinking deltas en temps réel
+    - Préservation des thinking blocks avec tool use
+    - Storage des thinking blocks dans la base de données
+  </overview>
+
+  <technology_stack>
+    <existing_stack>
+      Le projet dispose déjà de :
+      - Frontend : React + Vite + Tailwind CSS (port 5173)
+      - Backend : Node.js + Express + SQLite (port 3001)
+      - API Claude : Anthropic SDK avec streaming SSE
+      - Gestion de conversations : base SQLite avec tables conversations et messages
+      - Tool Use API : Memory tools déjà configurés
+    </existing_stack>
+
+    <extended_thinking_support>
+      <api_integration>
+        - Anthropic Messages API avec paramètre "thinking"
+        - Structure : { type: "enabled", budget_tokens: number }
+        - Budget min: 1024 tokens, max recommandé: 32000 tokens
+        - Au-delà de 32K: utiliser batch processing
+      </api_integration>
+
+      <response_format>
+        - Blocs "thinking" : raisonnement résumé (Claude 4+)
+        - Blocs "text" : réponse finale
+        - Blocs "redacted_thinking" : thinking chiffré pour sécurité
+        - Signature : champ de vérification cryptographique
+      </response_format>
+
+      <streaming_events>
+        - thinking_start : début du bloc thinking
+        - thinking_delta : chunk de thinking en temps réel
+        - thinking_stop : fin du bloc thinking
+        - content : texte de réponse normale
+        - signature_delta : signature cryptographique
+      </streaming_events>
+
+      <supported_models>
+        - Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) ✓
+        - Claude Sonnet 4 (claude-sonnet-4-20250514) ✓
+        - Claude Haiku 4.5 (claude-haiku-4-5-20251001) ✓
+        - Claude Opus 4.5 (claude-opus-4-5-20251101) ✓ + preserved blocks
+        - Claude Opus 4.1 (claude-opus-4-1-20250805) ✓
+        - Claude Opus 4 (claude-opus-4-20250514) ✓
+        - Claude Sonnet 3.7 (déprécié, thinking complet non résumé)
+      </supported_models>
+    </extended_thinking_support>
+  </technology_stack>
+
+  <prerequisites>
+    <existing_project>
+      - Projet Claude.ai Clone déjà fonctionnel
+      - Base SQLite avec tables conversations et messages opérationnelles
+      - API endpoints Claude existants (/api/claude/chat, /api/messages/*)
+      - Frontend React avec composants de chat déjà en place
+      - Tool Use API déjà implémenté (memory tools fonctionnels)
+    </existing_project>
+
+    <no_new_dependencies>
+      - Aucune nouvelle dépendance npm requise
+      - Utilise Anthropic SDK existant (déjà installé)
+      - Extended Thinking est une fonctionnalité native de l'API Claude
+    </no_new_dependencies>
+
+    <api_compatibility>
+      - API key Anthropic valide (déjà configurée)
+      - Modèles Claude 4+ recommandés pour thinking résumé
+      - Compatible avec les tools existants (memory, etc.)
+    </api_compatibility>
+  </prerequisites>
+
+  <core_features>
+    <feature_1>
+      <title>Backend - Support paramètre thinking dans API routes</title>
+      <description>
+        Modifier les routes backend pour accepter et transmettre le paramètre "thinking" à l'API Claude.
+
+        Fonctionnalités :
+        - Ajouter paramètres enableThinking et thinkingBudgetTokens aux requêtes
+        - Modifier server/routes/claude.js pour POST /api/claude/chat
+        - Modifier server/routes/messages.js pour POST /:conversationId/messages
+        - Construire l'objet thinking: { type: "enabled", budget_tokens: number }
+        - Passer thinking dans les appels anthropic.messages.create()
+        - Validation : budget_tokens entre 1024 et 200000
+        - Default : enableThinking=false, thinkingBudgetTokens=10000
+
+        Technique :
+        - Extraction des params depuis req.body ou conversation.settings
+        - Conditional : if (enableThinking) { apiParams.thinking = {...} }
+        - Merge avec params existants (model, max_tokens, tools, system)
+        - Pas de breaking changes pour les conversations existantes
+
+        Intégration :
+        - Modification de server/routes/claude.js (lignes ~92-146)
+        - Modification de server/routes/messages.js (lignes ~314-365)
+        - Compatible avec tool use existant (memory tools)
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Modifier les routes pour accepter enableThinking et thinkingBudgetTokens
+        2. Créer une conversation test avec thinking activé
+        3. Vérifier dans les logs que thinking est passé à l'API
+        4. Envoyer un message et vérifier la présence de thinking_delta events
+        5. Tester avec enableThinking=false et vérifier pas de thinking
+        6. Tester avec budget 1024, 10000, 32000 et vérifier comportement
+        7. Vérifier compatibilité avec memory tools (tool use + thinking)
+      </test_steps>
+    </feature_1>
+
+    <feature_2>
+      <title>Backend - Streaming des thinking deltas via SSE</title>
+      <description>
+        Implémenter la gestion des événements thinking dans le streaming SSE pour envoyer les thinking deltas au frontend en temps réel.
+
+        Fonctionnalités :
+        - Détecter event.type === 'content_block_start' avec type 'thinking'
+        - Émettre événement SSE thinking_start avec index du bloc
+        - Détecter event.type === 'content_block_delta' avec delta.type === 'thinking_delta'
+        - Émettre événement SSE thinking avec le texte delta
+        - Accumuler le thinking complet dans fullThinkingContent
+        - Détecter signature_delta et accumuler dans thinkingSignature
+        - Émettre thinking_stop à la fin du bloc
+        - Gérer redacted_thinking blocks (thinking chiffré)
+
+        Événements SSE émis :
+        - { type: 'thinking_start', index: number }
+        - { type: 'thinking', text: string } (streaming)
+        - { type: 'thinking_stop', index: number }
+        - { type: 'thinking_redacted', message: string } (si redacted)
+
+        Technique :
+        - Dans la boucle for await (const event of stream) de messages.js
+        - Variables : fullThinkingContent = '', thinkingSignature = ''
+        - res.write() pour chaque événement SSE
+        - isInThinkingBlock flag pour tracking état
+
+        Intégration :
+        - Modification de server/routes/messages.js (dans POST /:conversationId/messages)
+        - S'intègre dans la boucle de streaming existante (lignes ~365-400)
+        - Compatible avec tool_use events existants
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Activer thinking pour une conversation
+        2. Envoyer un message et observer les logs backend
+        3. Vérifier émission de thinking_start event
+        4. Vérifier émission de multiples thinking events (deltas)
+        5. Vérifier accumulation de fullThinkingContent
+        6. Vérifier émission de thinking_stop
+        7. Vérifier gestion de signature_delta
+        8. Tester avec prompt qui trigger redacted_thinking
+      </test_steps>
+    </feature_2>
+
+    <feature_3>
+      <title>Backend - Storage thinking dans base de données</title>
+      <description>
+        Ajouter les colonnes nécessaires à la table messages pour stocker les thinking blocks et permettre leur affichage après refresh.
+
+        Fonctionnalités :
+        - Migration DB : ajouter colonnes thinking_content et thinking_signature à table messages
+        - Sauvegarder fullThinkingContent dans thinking_content
+        - Sauvegarder thinkingSignature dans thinking_signature (pour vérification)
+        - Charger thinking_content lors de GET /api/conversations/:id/messages
+        - Inclure thinking dans la réponse JSON des messages
+        - Nullable : thinking_content peut être NULL si thinking désactivé
+
+        Schéma DB :
+        - ALTER TABLE messages ADD COLUMN thinking_content TEXT DEFAULT NULL
+        - ALTER TABLE messages ADD COLUMN thinking_signature TEXT DEFAULT NULL
+
+        Technique :
+        - Modification de server/db/index.js pour migration
+        - Vérifier existence colonnes avec pragma_table_info
+        - INSERT thinking_content et thinking_signature avec le message
+        - SELECT thinking_content dans les queries existantes
+        - Retourner dans response JSON : { ...message, thinking_content, thinking_signature }
+
+        Intégration :
+        - Modification de server/db/index.js (fonction initializeDatabase)
+        - Modification de INSERT dans server/routes/messages.js
+        - Modification de SELECT dans GET /api/conversations/:id/messages
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Lancer le serveur et vérifier migration DB dans logs
+        2. Vérifier colonnes ajoutées : PRAGMA table_info(messages)
+        3. Envoyer message avec thinking et vérifier INSERT
+        4. Vérifier thinking_content contient le texte thinking
+        5. Vérifier thinking_signature contient la signature
+        6. Refresh la page et vérifier thinking réapparaît
+        7. Tester message sans thinking et vérifier NULL
+      </test_steps>
+    </feature_3>
+
+    <feature_4>
+      <title>Backend - Settings DB pour thinking par conversation</title>
+      <description>
+        Ajouter les colonnes à la table conversations pour stocker les préférences thinking de chaque conversation.
+
+        Fonctionnalités :
+        - Migration DB : ajouter enable_thinking et thinking_budget_tokens à conversations
+        - Defaults : enable_thinking=0 (désactivé), thinking_budget_tokens=10000
+        - Charger settings depuis conversations.enable_thinking
+        - Utiliser dans la construction des appels API
+        - Permettre modification via endpoint PATCH /api/conversations/:id/settings
+
+        Schéma DB :
+        - ALTER TABLE conversations ADD COLUMN enable_thinking INTEGER DEFAULT 0
+        - ALTER TABLE conversations ADD COLUMN thinking_budget_tokens INTEGER DEFAULT 10000
+
+        Technique :
+        - Migration dans server/db/index.js
+        - Lecture dans POST /:conversationId/messages : const enableThinking = conversation.enable_thinking === 1
+        - Update via PATCH /api/conversations/:id : UPDATE conversations SET enable_thinking=?, thinking_budget_tokens=?
+
+        Intégration :
+        - Modification de server/db/index.js (migration)
+        - Modification de server/routes/messages.js (lecture settings)
+        - Nouveau endpoint ou modification endpoint conversations pour update
+      </description>
+      <priority>1</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Vérifier migration et création colonnes
+        2. Créer nouvelle conversation et vérifier defaults (0, 10000)
+        3. Activer thinking via PATCH et vérifier UPDATE
+        4. Envoyer message et vérifier thinking utilisé
+        5. Désactiver thinking et vérifier pas de thinking blocks
+        6. Modifier budget à 20000 et vérifier pris en compte
+        7. Vérifier persistance après redémarrage serveur
+      </test_steps>
+    </feature_4>
+
+    <feature_5>
+      <title>Frontend - Composant ThinkingBlock pour affichage</title>
+      <description>
+        Créer un composant React ThinkingBlock pour afficher les blocs thinking de façon élégante et collapsible.
+
+        Fonctionnalités :
+        - Composant React standalone : src/components/ThinkingBlock.jsx
+        - Props : thinking (string), signature (string), isStreaming (boolean)
+        - Header avec icône cerveau + titre "Claude's reasoning"
+        - Toggle expand/collapse (useState)
+        - Animation dots pendant streaming
+        - Contenu en police monospace pour meilleure lisibilité
+        - Background bleu clair (bg-blue-50 dark:bg-blue-950)
+        - Border bleu (border-blue-200 dark:border-blue-800)
+        - Affichage token count estimé (~length/4)
+        - Note "Summarized for display" pour Claude 4+
+
+        UI States :
+        - isStreaming=true : afficher "Thinking..." + dots animés
+        - isStreaming=false : afficher "Claude's reasoning"
+        - isExpanded=true : montrer contenu complet
+        - isExpanded=false : header seul avec chevron
+
+        Technique :
+        - Functional component avec hooks (useState)
+        - Tailwind CSS pour styling
+        - SVG icons (brain icon, chevron)
+        - Animation CSS pour dots (animate-bounce avec delay)
+        - Transition pour collapse (max-height ou conditional render)
+
+        Intégration :
+        - Nouveau fichier src/components/ThinkingBlock.jsx
+        - Importé dans src/App.jsx
+        - Utilisé dans le composant Message
+      </description>
+      <priority>2</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Créer le composant ThinkingBlock.jsx
+        2. Tester affichage avec thinking statique
+        3. Vérifier toggle expand/collapse fonctionne
+        4. Tester avec isStreaming=true et voir animation
+        5. Vérifier responsive design (mobile)
+        6. Vérifier dark mode (bg et border colors)
+        7. Vérifier token count affiché correctement
+        8. Vérifier note "Summarized" présente
+      </test_steps>
+    </feature_5>
+
+    <feature_6>
+      <title>Frontend - Intégration ThinkingBlock dans messages</title>
+      <description>
+        Intégrer le composant ThinkingBlock dans l'affichage des messages pour montrer le thinking avant le contenu.
+
+        Fonctionnalités :
+        - Ajouter state thinkingContent dans Message component
+        - Afficher ThinkingBlock si thinkingContent existe
+        - Position : avant le contenu du message
+        - Charger thinking depuis message.thinking_content (DB)
+        - Update en temps réel pendant streaming
+        - Flag isThinkingStreaming pour animation
+
+        Structure :
+        ```jsx
+        <div className="message">
+          {thinkingContent && (
+            <ThinkingBlock
+              thinking={thinkingContent}
+              signature={message.thinking_signature}
+              isStreaming={isThinkingStreaming}
+            />
+          )}
+          <div className="message-content">
+            {message.content}
+          </div>
+        </div>
+        ```
+
+        Technique :
+        - useState pour thinkingContent et isThinkingStreaming
+        - Initialiser depuis message.thinking_content au mount
+        - Update pendant streaming via SSE events
+        - Conditional render avec && operator
+
+        Intégration :
+        - Modification de src/App.jsx (Message component)
+        - Import ThinkingBlock component
+        - Pas de breaking changes pour messages sans thinking
+      </description>
+      <priority>2</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Afficher conversation avec thinking blocks
+        2. Vérifier ThinkingBlock apparaît avant le contenu
+        3. Vérifier thinking chargé depuis DB au refresh
+        4. Envoyer nouveau message et vérifier streaming
+        5. Vérifier isThinkingStreaming = true pendant streaming
+        6. Vérifier isThinkingStreaming = false après
+        7. Vérifier messages sans thinking non affectés
+        8. Tester scroll avec thinking blocks longs
+      </test_steps>
+    </feature_6>
+
+    <feature_7>
+      <title>Frontend - Settings Panel pour thinking toggle</title>
+      <description>
+        Ajouter contrôles dans le panneau de settings de conversation pour activer/désactiver Extended Thinking.
+
+        Fonctionnalités :
+        - Toggle checkbox "Extended Thinking"
+        - Description : "Enable enhanced reasoning for complex tasks"
+        - Icône cerveau à côté du label
+        - State local synchronisé avec conversation.enable_thinking
+        - Update via PATCH /api/conversations/:id au changement
+        - Affichage conditionnel du thinking budget slider si activé
+
+        UI :
+        - Section dans conversation settings (à côté temperature, max_tokens)
+        - Checkbox custom avec style Tailwind
+        - Label clickable avec flex layout
+        - Description en text-xs text-gray-500
+
+        Technique :
+        - Modification du composant ConversationSettings (ou équivalent)
+        - useState pour enable_thinking (init depuis conversation)
+        - onChange handler avec PATCH request
+        - Conditional render pour budget slider
+
+        Intégration :
+        - Modification de src/App.jsx (settings panel)
+        - PATCH /api/conversations/:id endpoint (backend)
+        - Reload conversation après update
+      </description>
+      <priority>2</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Ouvrir settings d'une conversation
+        2. Voir la checkbox "Extended Thinking"
+        3. Cocher la checkbox et vérifier PATCH request
+        4. Vérifier conversation.enable_thinking = 1 en DB
+        5. Envoyer message et vérifier thinking apparaît
+        6. Décocher et vérifier plus de thinking
+        7. Vérifier persistance après refresh
+        8. Vérifier icône cerveau affichée
+      </test_steps>
+    </feature_7>
+
+    <feature_8>
+      <title>Frontend - Thinking Budget Slider</title>
+      <description>
+        Ajouter un slider pour ajuster le budget thinking (nombre de tokens alloués au raisonnement).
+
+        Fonctionnalités :
+        - Range input de 1024 à 32000 tokens
+        - Step de 1024 tokens pour granularité
+        - Labels : "1K tokens" (min), "32K tokens" (max), valeur actuelle au centre
+        - Visible uniquement si Extended Thinking activé
+        - Description : "Higher budgets enable more thorough analysis"
+        - Update en temps réel de conversation.thinking_budget_tokens
+        - Warning si >32K (recommander batch processing)
+
+        UI :
+        - Input type="range" stylisé avec Tailwind
+        - Display de la valeur en temps réel (formatée avec .toLocaleString())
+        - Labels aux extrémités
+        - Spacing cohérent avec autres settings
+
+        Technique :
+        - Conditional render : {settings.enableThinking && <div>slider</div>}
+        - Value controlled par state
+        - onChange avec debounce (300ms) pour éviter trop de PATCH
+        - Min=1024, max=32000, step=1024
+
+        Intégration :
+        - Dans le même settings panel que le toggle
+        - Juste en dessous de la checkbox Extended Thinking
+        - Update via même endpoint PATCH
+      </description>
+      <priority>2</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Activer Extended Thinking
+        2. Voir le slider apparaître
+        3. Ajuster à 5000 tokens et vérifier update
+        4. Vérifier valeur affichée change en temps réel
+        5. Vérifier PATCH request avec debounce
+        6. Envoyer message et vérifier budget utilisé
+        7. Tester min (1024) et max (32000)
+        8. Désactiver thinking et vérifier slider disparaît
+      </test_steps>
+    </feature_8>
+
+    <feature_9>
+      <title>Frontend - Badge "Thinking" dans conversation list</title>
+      <description>
+        Afficher un badge visuel dans la liste de conversations pour indiquer que Extended Thinking est activé.
+
+        Fonctionnalités :
+        - Badge avec icône cerveau + texte "Thinking"
+        - Couleur : bg-blue-100 text-blue-700 (light) / bg-blue-900 text-blue-200 (dark)
+        - Taille : text-xs, padding minimal
+        - Position : à droite du titre de conversation
+        - Visible seulement si enable_thinking = 1
+        - Style pill/rounded-full
+
+        UI :
+        - Inline badge avec flexbox
+        - Icon + text dans le même span
+        - Cohérent avec autres badges (pinned, etc.)
+
+        Technique :
+        - Dans ConversationListItem component
+        - Parse conversation.enable_thinking || JSON.parse(conversation.settings)?.enableThinking
+        - Conditional render : {enableThinking && <span>badge</span>}
+        - SVG brain icon (w-3 h-3)
+
+        Intégration :
+        - Modification du composant ConversationListItem
+        - Ajout après conversation.title
+        - Pas de breaking changes
+      </description>
+      <priority>3</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Créer conversation avec thinking activé
+        2. Voir badge "Thinking" dans la liste
+        3. Vérifier icône cerveau présente
+        4. Vérifier couleurs en light et dark mode
+        5. Créer conversation sans thinking
+        6. Vérifier absence de badge
+        7. Activer thinking et vérifier badge apparaît
+        8. Vérifier responsive (mobile)
+      </test_steps>
+    </feature_8>
+
+    <feature_10>
+      <title>Frontend - Streaming handler pour thinking deltas</title>
+      <description>
+        Implémenter la logique frontend pour recevoir et afficher les thinking deltas en streaming via SSE.
+
+        Fonctionnalités :
+        - Écouter événement SSE 'thinking_start'
+        - Set isThinkingStreaming = true
+        - Écouter 'thinking' events et accumuler dans currentThinking
+        - Update thinkingContent en temps réel
+        - Écouter 'thinking_stop' et set isThinkingStreaming = false
+        - Gérer 'thinking_redacted' avec message d'info
+        - Buffer thinking complet pour sauvegarde finale
+
+        Event handling :
+        ```javascript
+        case 'thinking_start':
+          setIsThinkingStreaming(true);
+          currentThinking = '';
+          break;
+        case 'thinking':
+          currentThinking += data.text;
+          setThinkingContent(currentThinking);
+          break;
+        case 'thinking_stop':
+          setIsThinkingStreaming(false);
+          break;
+        ```
+
+        Technique :
+        - Dans la fonction sendMessage() (ou équivalent)
+        - EventSource ou fetch streaming déjà existant
+        - Switch sur data.type pour router events
+        - State updates via setters
+        - Cleanup des listeners à la fin
+
+        Intégration :
+        - Modification de src/App.jsx (sendMessage function)
+        - S'intègre dans le handler SSE existant
+        - Compatible avec tool_use events
+      </description>
+      <priority>1</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Activer thinking pour conversation
+        2. Envoyer message et observer console
+        3. Vérifier thinking_start event reçu
+        4. Vérifier thinking deltas reçus et accumulés
+        5. Vérifier ThinkingBlock update en temps réel
+        6. Vérifier thinking_stop event
+        7. Vérifier isThinkingStreaming toggle correct
+        8. Tester avec redacted_thinking
+      </test_steps>
+    </feature_10>
+
+    <feature_11>
+      <title>Backend - Préservation thinking blocks avec tool use</title>
+      <description>
+        Implémenter la logique pour préserver les thinking blocks lors de l'utilisation de tools, conformément à la spec Claude API.
+
+        Fonctionnalités :
+        - Quand stop_reason === 'tool_use', extraire thinking blocks
+        - Extraire tool_use blocks
+        - Passer thinking + tool_use dans messages assistant
+        - Exécuter tools (processToolCalls déjà existant)
+        - Retourner tool_results
+        - Continuer conversation avec thinking préservé
+        - Support de interleaved thinking (beta header optionnel)
+
+        Workflow :
+        1. Response avec stop_reason='tool_use'
+        2. Filtrer content : thinking + redacted_thinking blocks
+        3. Filtrer content : tool_use blocks
+        4. Push assistant message avec [...thinkingBlocks, ...toolUseBlocks]
+        5. Execute tools via processToolCalls()
+        6. Push user message avec tool_results
+        7. Nouvelle iteration avec thinking préservé
+
+        Technique :
+        - Dans la boucle tool use existante (messages.js)
+        - Filter blocks par type : 'thinking', 'redacted_thinking', 'tool_use'
+        - Merge dans content array
+        - Preserve order : thinking d'abord, puis tools
+        - Compatible avec code tool use existant
+
+        Intégration :
+        - Modification de server/routes/messages.js (tool use loop)
+        - Compatible avec memory tools existants
+        - Pas de breaking changes
+      </description>
+      <priority>2</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Activer thinking + memory tools
+        2. Demander "Recherche dans tes souvenirs sur X"
+        3. Vérifier Claude utilise thinking + tool search_memories
+        4. Vérifier thinking blocks préservés dans messages array
+        5. Vérifier tool results retournés correctement
+        6. Vérifier Claude continue avec contexte thinking
+        7. Tester avec multiple tool calls
+        8. Vérifier logs montrent preservation
+      </test_steps>
+    </feature_11>
+
+    <feature_12>
+      <title>Backend - Token tracking pour thinking</title>
+      <description>
+        Améliorer le tracking des tokens pour distinguer thinking tokens des output tokens normaux.
+
+        Fonctionnalités :
+        - Calculer thinking tokens approximatif (length / 4)
+        - Logger séparément input_tokens, output_tokens, thinking_tokens
+        - Sauvegarder dans usage_tracking (optionnel : nouvelle colonne)
+        - Inclure thinking_tokens dans response 'done' event
+        - Documentation du fait que thinking est facturé au tarif complet
+
+        Logging :
+        ```javascript
+        console.log('[Thinking Tokens]', {
+          input_tokens: response.usage.input_tokens,
+          output_tokens: response.usage.output_tokens, // Inclut thinking complet
+          visible_thinking_tokens: Math.ceil(thinkingContent.length / 4),
+          text_output_tokens: Math.ceil(textContent.length / 4)
+        });
+        ```
+
+        Technique :
+        - Fonction calculateTokens(text) : Math.ceil(text.length / 4)
+        - Logging après chaque response
+        - Inclure dans event 'done' : thinkingTokens: calculateTokens(fullThinkingContent)
+        - Optionnel : ALTER TABLE usage_tracking ADD COLUMN thinking_tokens
+
+        Intégration :
+        - Modification de server/routes/messages.js
+        - Modification de usage_tracking INSERT (optionnel)
+        - Frontend peut afficher thinking cost
+      </description>
+      <priority>3</priority>
+      <category>backend</category>
+      <test_steps>
+        1. Envoyer message avec thinking
+        2. Vérifier logs backend montrent breakdown tokens
+        3. Vérifier thinking_tokens dans event 'done'
+        4. Vérifier total = input + output + thinking
+        5. Comparer visible thinking tokens vs billed
+        6. Tester avec différents budgets
+        7. Vérifier tracking en DB (si colonne ajoutée)
+      </test_steps>
+    </feature_12>
+
+    <feature_13>
+      <title>Frontend - Usage stats avec thinking tokens</title>
+      <description>
+        Afficher les statistiques d'utilisation incluant les thinking tokens dans l'interface.
+
+        Fonctionnalités :
+        - Section usage stats dans conversation details
+        - Afficher Total Tokens (existant)
+        - Afficher Thinking Tokens séparément (en bleu)
+        - Note explicative : "Thinking tokens are summarized but billed at full rate"
+        - Graph ou visual si >0 thinking tokens
+        - Format avec .toLocaleString() pour lisibilité
+
+        UI :
+        ```jsx
+        <div className="usage-stats">
+          <div className="stat">
+            <label>Total Tokens</label>
+            <span>{conversation.token_count.toLocaleString()}</span>
+          </div>
+          {conversation.thinking_tokens > 0 && (
+            <div className="stat text-blue-600">
+              <label>Thinking Tokens</label>
+              <span>{conversation.thinking_tokens.toLocaleString()}</span>
+            </div>
+          )}
+        </div>
+        ```
+
+        Technique :
+        - Composant UsageStats (nouveau ou modification existant)
+        - Props : conversation avec token_count et thinking_tokens
+        - Conditional render si thinking_tokens > 0
+        - Tailwind classes pour styling
+
+        Intégration :
+        - Dans conversation details panel ou settings
+        - Charger data depuis conversation ou API
+        - Update après chaque message
+      </description>
+      <priority>3</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Avoir conversation avec thinking
+        2. Ouvrir usage stats
+        3. Voir Total Tokens et Thinking Tokens
+        4. Vérifier Thinking Tokens en bleu
+        5. Voir note explicative
+        6. Envoyer nouveau message et voir update
+        7. Tester avec conversation sans thinking
+        8. Vérifier Thinking Tokens section cachée
+      </test_steps>
+    </feature_13>
+
+    <feature_14>
+      <title>Frontend - Error handling pour thinking timeout</title>
+      <description>
+        Gérer gracieusement les cas où le thinking prend trop de temps (>2 minutes) avec timeout et message utilisateur.
+
+        Fonctionnalités :
+        - Timeout de 2 minutes (120000ms) pour thinking
+        - Afficher message : "Thinking is taking longer than expected..."
+        - Ne pas bloquer l'affichage de la réponse finale
+        - Logger warning en console
+        - Permettre annulation (optionnel)
+
+        Backend :
+        - setTimeout pour 120s après thinking_start
+        - Émettre event 'thinking_timeout' si pas de thinking_stop
+        - Clear timeout si thinking_stop avant
+
+        Frontend :
+        - Écouter 'thinking_timeout' event
+        - Afficher notification ou message dans ThinkingBlock
+        - Continuer à écouter pour eventual thinking_stop
+
+        Technique :
+        - Backend : let thinkingTimeout = setTimeout(() => {...}, 120000)
+        - Backend : clearTimeout(thinkingTimeout) dans thinking_stop
+        - Frontend : toast notification ou inline message
+        - Pas de crash, juste warning
+
+        Intégration :
+        - Modification de server/routes/messages.js
+        - Modification de src/App.jsx (event handler)
+        - UX: message discret, pas d'alerte invasive
+      </description>
+      <priority>3</priority>
+      <category>fullstack</category>
+      <test_steps>
+        1. Créer prompt qui génère >2min de thinking (difficile)
+        2. Vérifier timeout warning après 2min
+        3. Vérifier message affiché à l'utilisateur
+        4. Vérifier thinking_stop clear le timeout
+        5. Vérifier pas de crash si timeout
+        6. Vérifier réponse finale affichée malgré timeout
+        7. Vérifier logs backend
+      </test_steps>
+    </feature_14>
+
+    <feature_15>
+      <title>Documentation - Guide utilisateur Extended Thinking</title>
+      <description>
+        Créer documentation inline ou modal pour expliquer Extended Thinking aux utilisateurs.
+
+        Fonctionnalités :
+        - Bouton "?" ou "info" à côté du toggle Extended Thinking
+        - Modal/popover explicatif au clic
+        - Sections :
+          * Qu'est-ce que Extended Thinking ?
+          * Quand l'utiliser ? (math, code, analysis)
+          * Quand NE PAS l'utiliser ? (questions simples)
+          * Impact sur temps de réponse (2-5x plus long)
+          * Budget thinking : qu'est-ce que c'est ?
+          * Facturation (thinking facturé au tarif complet)
+        - Exemples concrets d'utilisation
+        - Lien vers docs Anthropic (optionnel)
+
+        UI :
+        - Icône info circulaire (i dans cercle)
+        - Modal Headless UI ou simple div
+        - Prose styling pour lisibilité
+        - Bouton "Got it" pour fermer
+
+        Technique :
+        - Composant InfoModal ou réutilisation existant
+        - Markdown content ou JSX statique
+        - State pour open/close modal
+        - onClick sur icône info
+
+        Intégration :
+        - À côté du toggle Extended Thinking dans settings
+        - Peut aussi dans un "Help" menu global
+        - Traduction FR/EN si multilingue
+      </description>
+      <priority>4</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Voir icône info à côté de Extended Thinking
+        2. Cliquer et voir modal s'ouvrir
+        3. Lire contenu explicatif
+        4. Vérifier exemples clairs
+        5. Cliquer "Got it" et fermer
+        6. Vérifier responsive design
+        7. Vérifier accessibility (keyboard nav)
+      </test_steps>
+    </feature_15>
+  </core_features>
+
+  <ui_design>
+    <integration_notes>
+      Cette extension s'intègre dans le design existant du clone Claude.ai.
+      Tous les nouveaux composants doivent respecter le design system existant.
+    </integration_notes>
+
+    <new_components>
+      - ThinkingBlock : Bloc collapsible pour afficher le thinking (bleu clair)
+      - Thinking Toggle : Checkbox dans settings pour activer/désactiver
+      - Budget Slider : Range input pour ajuster budget thinking
+      - Thinking Badge : Petit badge dans conversation list
+      - Usage Stats : Section pour afficher thinking tokens
+      - Info Modal : Documentation Extended Thinking
+    </new_components>
+
+    <color_scheme>
+      Utiliser les couleurs existantes du clone Claude.ai, avec ajouts pour thinking :
+      - Thinking blocks : bg-blue-50 text-blue-800 (light) / bg-blue-950 text-blue-200 (dark)
+      - Borders : border-blue-200 (light) / border-blue-800 (dark)
+      - Badge thinking : bg-blue-100 text-blue-700 (light) / bg-blue-900 text-blue-200 (dark)
+      - Icons : text-blue-600 (light) / text-blue-400 (dark)
+      - Accent : conserver #CC785C (orange claude.ai) pour cohérence
+    </color_scheme>
+
+    <icons>
+      - Icône cerveau (brain) pour thinking : SVG custom ou Lucide React
+      - Chevron pour collapse/expand
+      - Info icon (i dans cercle) pour documentation
+      - Dots animés pour streaming (3 cercles avec animate-bounce)
+    </icons>
+
+    <animations>
+      - Dots streaming : animate-bounce avec animation-delay
+      - Collapse/expand : transition max-height ou opacity
+      - Pulse discret lors sauvegarde (optionnel)
+      - Smooth transitions (duration-200)
+    </animations>
+
+    <responsive>
+      - Thinking blocks full width sur mobile
+      - Settings panel stacké verticalement sur mobile
+      - Badge thinking masqué sur très petits écrans (optionnel)
+      - Touch targets >44px pour mobile
+    </responsive>
+  </ui_design>
+
+  <api_endpoints>
+    <note>
+      Modifications aux endpoints existants. Pas de nouveaux endpoints nécessaires.
+    </note>
+
+    <existing_endpoints_modified>
+      <endpoint>
+        <method>POST</method>
+        <path>/api/claude/chat</path>
+        <modification>
+          - Accepter enableThinking et thinkingBudgetTokens dans req.body
+          - Construire thinking: { type: "enabled", budget_tokens: number }
+          - Passer dans anthropic.messages.create()
+        </modification>
+      </endpoint>
+
+      <endpoint>
+        <method>POST</method>
+        <path>/api/conversations/:conversationId/messages</path>
+        <modification>
+          - Charger enable_thinking et thinking_budget_tokens depuis conversation
+          - Ajouter thinking dans requête API si activé
+          - Émettre thinking_start, thinking, thinking_stop via SSE
+          - Sauvegarder thinking_content et thinking_signature en DB
+        </modification>
+      </endpoint>
+
+      <endpoint>
+        <method>POST</method>
+        <path>/api/messages/:id/regenerate</path>
+        <modification>
+          - Même logique que POST messages
+          - Charger thinking settings depuis conversation
+          - Support thinking dans regeneration
+        </modification>
+      </endpoint>
+
+      <endpoint>
+        <method>PATCH</method>
+        <path>/api/conversations/:id</path>
+        <modification>
+          - Accepter enable_thinking et thinking_budget_tokens
+          - UPDATE conversations SET enable_thinking=?, thinking_budget_tokens=?
+          - Validation budget entre 1024 et 200000
+        </modification>
+      </endpoint>
+
+      <endpoint>
+        <method>GET</method>
+        <path>/api/conversations/:id/messages</path>
+        <modification>
+          - SELECT thinking_content, thinking_signature avec messages
+          - Retourner dans response JSON
+        </modification>
+      </endpoint>
+    </existing_endpoints_modified>
+  </api_endpoints>
+
+  <database_schema>
+    <sqlite_modifications>
+      Modifications à la base SQLite existante :
+
+      <table>
+        <name>conversations (table existante - ajouter colonnes)</name>
+        <new_columns>
+          <column>enable_thinking INTEGER DEFAULT 0</column>
+          <column>thinking_budget_tokens INTEGER DEFAULT 10000</column>
+        </new_columns>
+        <description>
+          - enable_thinking : 0 = désactivé, 1 = activé
+          - thinking_budget_tokens : nombre de tokens alloués (1024-200000)
+        </description>
+      </table>
+
+      <table>
+        <name>messages (table existante - ajouter colonnes)</name>
+        <new_columns>
+          <column>thinking_content TEXT DEFAULT NULL</column>
+          <column>thinking_signature TEXT DEFAULT NULL</column>
+        </new_columns>
+        <description>
+          - thinking_content : texte thinking résumé (NULL si pas de thinking)
+          - thinking_signature : signature cryptographique pour vérification
+        </description>
+      </table>
+
+      <table>
+        <name>usage_tracking (table existante - optionnel)</name>
+        <new_columns>
+          <column>thinking_tokens INTEGER DEFAULT 0</column>
+        </new_columns>
+        <description>
+          - thinking_tokens : nombre approximatif de tokens thinking (pour stats)
+          - Optionnel : peut être calculé à la volée depuis message.thinking_content
+        </description>
+      </table>
+    </sqlite_modifications>
+
+    <migration>
+      Migration automatique au démarrage dans server/db/index.js :
+      1. Vérifier existence colonnes avec pragma_table_info
+      2. Si absentes, ALTER TABLE pour ajouter
+      3. Logger migration success
+      4. Pas de data loss, defaults appliqués
+    </migration>
+  </database_schema>
+
+  <deployment>
+    <development>
+      Le projet Claude.ai Clone est déjà configuré.
+      Extended Thinking ne nécessite aucune dépendance externe supplémentaire.
+    </development>
+
+    <no_new_dependencies>
+      - Utilise Anthropic SDK existant (@anthropic-ai/sdk)
+      - Aucun package npm additionnel requis
+      - Extended Thinking est natif à l'API Claude
+    </no_new_dependencies>
+
+    <backward_compatibility>
+      - Toutes les conversations existantes continuent de fonctionner
+      - enable_thinking DEFAULT 0 : thinking désactivé par défaut
+      - thinking_content NULL pour anciens messages
+      - Pas de breaking changes
+    </backward_compatibility>
+
+    <environment_variables>
+      Aucune nouvelle variable d'environnement requise.
+      Utilise ANTHROPIC_API_KEY existant.
+    </environment_variables>
+
+    <performance_considerations>
+      - Extended Thinking augmente temps de réponse (2-5x)
+      - Budgets >32K : considérer batch processing
+      - Thinking blocks augmentent taille messages DB (TEXT column)
+      - Streaming thinking : bande passante SSE accrue
+      - Recommander thinking seulement pour tâches complexes
+    </performance_considerations>
+  </deployment>
+</project_specification>
