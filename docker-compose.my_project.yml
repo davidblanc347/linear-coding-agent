@@ -11,6 +11,7 @@ services:
       - "4300:3000"
     environment:
       - NODE_ENV=development
+      - DOCKER_ENV=true
 
   my_project_server:
     image: node:20
