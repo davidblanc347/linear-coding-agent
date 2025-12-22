@@ -68,15 +68,15 @@ pip show claude-code-sdk  # Check SDK is installed
 
 ```bash
 # Initialize the Claude Clone example project
-python autonomous_agent_demo.py --project-dir ./my_project
+python autonomous_agent_demo.py --project-dir ./ikario_body
 
 # Add new features to an existing project
-python autonomous_agent_demo.py --project-dir ./my_project --new-spec app_spec_theme_customization.txt
+python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_theme_customization.txt
 ```
 
 For testing with limited iterations:
 ```bash
-python autonomous_agent_demo.py --project-dir ./my_project --max-iterations 3
+python autonomous_agent_demo.py --project-dir ./ikario_body --max-iterations 3
 ```
 
 ### Option 2: Create Your Own Application
@@ -148,7 +148,7 @@ The **Initializer Bis** agent allows you to add new features to an existing proj
 **Example:**
 ```bash
 # Add theme customization features to an existing project
-python autonomous_agent_demo.py --project-dir ./my_project --new-spec app_spec_theme_customization.txt
+python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_theme_customization.txt
 ```
 
 This will create multiple Linear issues (one per `<feature>` tag) that will be worked on by subsequent coding agent sessions.
@@ -206,7 +206,7 @@ linear-agent-harness/
 After running, your project directory will contain:
 
 ```
-my_project/
+ikario_body/
 ├── .linear_project.json      # Linear project state (marker file)
 ├── app_spec.txt              # Copied specification
 ├── app_spec_theme_customization.txt  # New spec file (if using --new-spec)
@@ -507,7 +507,7 @@ The Claude Clone example in `prompts/app_spec.txt` is excellent reference materi
 2. Format it with `<feature>` tags following the same structure as `app_spec.txt`
 3. Run with `--new-spec` flag:
    ```bash
-   python autonomous_agent_demo.py --project-dir ./my_project --new-spec app_spec_new_feature.txt
+   python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_new_feature.txt
    ```
 4. The Initializer Bis agent will create new Linear issues for each feature in the spec file
 

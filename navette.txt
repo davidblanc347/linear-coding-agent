@@ -23,7 +23,7 @@ ANCIEN SPEC (app_spec_ikario_rag_improvements.txt):
 ❌ A cause le probleme (agent a modifie ton code)
 
 NOUVEAU SPEC (app_spec_ikario_rag_UI.txt):
-✓ Developpe UNIQUEMENT dans generations/my_project/
+✓ Developpe UNIQUEMENT dans generations/ikario_body/
 ✓ UTILISE les 7 outils MCP existants (via client)
 ✓ NE TOUCHE PAS au code ikario_rag
 ✓ Ajoute interface utilisateur pour exploiter la memoire
@@ -66,7 +66,7 @@ Le serveur ikario_rag expose deja 7 outils MCP:
 6. trace_concept_evolution - Tracer evolution concept
 7. check_consistency - Check coherence
 
-On utilise ces outils VIA le client MCP deja present dans my_project:
+On utilise ces outils VIA le client MCP deja present dans ikario_body:
 - server/services/mcpClient.js
 
 ================================================================================
@@ -109,7 +109,7 @@ PROCHAINES ACTIONS
 
 3. CREER 15 NOUVELLES ISSUES?
    - Pour les 15 features du nouveau spec (UI)
-   - Issues qui developpent dans my_project
+   - Issues qui developpent dans ikario_body
    - Options:
      a) OUI, creer maintenant avec initializer bis
      b) OUI, mais manuellement dans Linear
@@ -132,7 +132,7 @@ MES RECOMMANDATIONS
 3. NOUVELLES ISSUES: CREER MAINTENANT
    - 15 nouvelles issues pour features UI
    - Lancer initializer bis avec nouveau spec
-   - Developper uniquement dans my_project
+   - Developper uniquement dans ikario_body
    - Avec restrictions sandbox pour SynologyDrive
 
 ================================================================================
@@ -148,7 +148,7 @@ Si tu es d'accord avec mes recommandations:
    (je peux le faire via Linear API)
 
 3. Creer 15 nouvelles issues:
-   python autonomous_agent_demo.py --project-dir my_project --new-spec app_spec_ikario_rag_UI.txt
+   python autonomous_agent_demo.py --project-dir ikario_body --new-spec app_spec_ikario_rag_UI.txt
 
 4. Ajouter restrictions sandbox (avant de lancer agent):
    (je dois modifier autonomous_agent_demo.py pour bloquer SynologyDrive)
@@ -190,7 +190,7 @@ Tu peux le lire pour verifier que c'est bien ce que tu veux.
 Points importants:
 - 15 features frontend/backend
 - ZERO modification ikario_rag
-- Developpe dans my_project uniquement
+- Developpe dans ikario_body uniquement
 - Utilise outils MCP existants
 - 5 phases implementation (7-10 jours total)
 
@@ -590,7 +590,7 @@ POURQUOI:
 - Plus facile a debugger
 - Pas de "magic" (Option C serait trop implicite)
 
-ARCHITECTURE BACKEND my_project:
+ARCHITECTURE BACKEND ikario_body:
 -------------------------------
 POST /api/chat/message
 -> User envoie message
@@ -1002,7 +1002,7 @@ async def append_to_conversation(
     return f"Conversation {conversation_id} updated: added {len(new_messages)} messages (total: {updated_metadata['message_count']})"
 ```
 
-UTILISATION BACKEND (my_project):
+UTILISATION BACKEND (ikario_body):
 ```javascript
 // POST /api/chat/message
 app.post('/api/chat/message', async (req, res) => {
@@ -2145,9 +2145,9 @@ PROCHAINES ACTIONS RECOMMANDEES
    - Clean slate pour nouvelles issues
 
 3. CREER 15 nouvelles issues avec nouveau spec
-   - Utiliser: python autonomous_agent_demo.py --project-dir my_project --new-spec app_spec_ikario_rag_UI.txt
+   - Utiliser: python autonomous_agent_demo.py --project-dir ikario_body --new-spec app_spec_ikario_rag_UI.txt
    - Mode: initializer bis
-   - Issues pour developper dans my_project uniquement
+   - Issues pour developper dans ikario_body uniquement
 
 4. LANCER agent coding
    - Apres creation des issues
@@ -2208,16 +2208,16 @@ PROJET 1: ikario_rag (C:/Users/david/SynologyDrive/ikario/ikario_rag/)
   * Tests (test_append_conversation.py)
   * Commits: 55d905b, cba84fe
 
-PROJET 2: my_project (C:/GitHub/Linear_coding/generations/my_project/)
+PROJET 2: ikario_body (C:/GitHub/Linear_coding/generations/ikario_body/)
 - Frontend React + Backend Express
 - Interface utilisateur pour UTILISER les outils MCP d'ikario_rag
 - CE QU'ON A FAIT:
   * Cree spec UI (prompts/app_spec_ikario_rag_UI.txt)
   * Commit: 3a17744
-  * MAIS: rien d'implemente dans my_project encore!
+  * MAIS: rien d'implemente dans ikario_body encore!
 
 Le spec UI que j'ai cree est pour PLUS TARD, quand on developpera
-l'interface dans my_project qui UTILISERA ikario_rag.
+l'interface dans ikario_body qui UTILISERA ikario_rag.
 
 Tu as raison: ON DOIT D'ABORD FINIR ikario_rag!
 
@@ -2243,7 +2243,7 @@ CE QU'IL RESTE A FAIRE DANS ikario_rag
    - Code existant continue de fonctionner
    - Pas de breaking changes
 
-ENSUITE SEULEMENT on passera a my_project.
+ENSUITE SEULEMENT on passera a ikario_body.
 
 ================================================================================
 DECISION REQUISE

@@ -267,7 +267,7 @@ db.exec(`ALTER TABLE conversations ADD COLUMN thinking_budget_tokens INTEGER DEF
 - Backend: http://localhost:3001 (or 3004 if port occupied)
 - Frontend: http://localhost:5178 (Vite auto-selects available port)
 
-**Database**: `generations/my_project/server/data/claude-clone.db`
+**Database**: `generations/ikario_body/server/data/claude-clone.db`
 
 ---
 

@@ -3,7 +3,7 @@
 Patch getMemoryStats to count thoughts and conversations separately
 """
 
-file_path = "C:/GitHub/Linear_coding/generations/my_project/server/services/memoryService.js"
+file_path = "C:/GitHub/Linear_coding/generations/ikario_body/server/services/memoryService.js"
 
 # Lire le fichier
 with open(file_path, 'r', encoding='utf-8') as f:
