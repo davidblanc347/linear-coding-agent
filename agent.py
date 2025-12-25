@@ -17,6 +17,7 @@ from prompts import (
     get_initializer_prompt,
     get_initializer_bis_prompt,
     get_coding_prompt,
+    get_coding_prompt_library,
     copy_spec_to_project,
     copy_new_spec_to_project,
 )
@@ -24,6 +25,34 @@ from prompts import (
 
 # Configuration
 AUTO_CONTINUE_DELAY_SECONDS = 3
+
+
+def is_library_project(project_dir: Path) -> bool:
+    """
+    Detect if this is a library/type-safety project vs a full-stack web app.
+
+    Checks app_spec.txt for keywords related to type safety, documentation, or library projects.
+    """
+    app_spec_path = project_dir / "app_spec.txt"
+    if not app_spec_path.exists():
+        return False
+
+    try:
+        spec_content = app_spec_path.read_text(encoding='utf-8').lower()
+
+        # Keywords that indicate a library/type-safety project
+        library_keywords = [
+            "type safety",
+            "type annotations",
+            "docstrings",
+            "documentation enhancement",
+            "mypy",
+            "library rag",
+        ]
+
+        return any(keyword in spec_content for keyword in library_keywords)
+    except Exception:
+        return False
 
 
 async def run_agent_session(
@@ -162,8 +191,8 @@ async def run_autonomous_agent(
         print("Fresh start - will use initializer agent")
         print()
         print("=" * 70)
-        print("  NOTE: First session takes 10-20+ minutes!")
-        print("  The agent is creating 50 Linear issues and setting up the project.")
+        print("  NOTE: First session may take several minutes!")
+        print("  The agent is creating Linear issues (one per feature in spec).")
         print("  This may appear to hang - it's working. Watch for [Tool: ...] output.")
         print("=" * 70)
         print()
@@ -213,7 +242,11 @@ async def run_autonomous_agent(
             prompt = get_initializer_bis_prompt()
             use_initializer_bis = False  # Only use initializer bis once
         else:
-            prompt = get_coding_prompt()
+            # Detect project type and use appropriate coding prompt
+            if is_library_project(project_dir):
+                prompt = get_coding_prompt_library()
+            else:
+                prompt = get_coding_prompt()
 
         # Run session with async context manager
         async with client:

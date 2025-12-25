@@ -17,7 +17,11 @@ import asyncio
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from agent import run_autonomous_agent
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Configuration
@@ -48,9 +52,10 @@ Examples:
   # Add new specifications to existing project
   python autonomous_agent_demo.py --project-dir ./claude_clone --new-spec app_spec_new1.txt
 
-Environment Variables:
+Configuration (.env file):
   CLAUDE_CODE_OAUTH_TOKEN    Claude Code OAuth token (required)
   LINEAR_API_KEY             Linear API key (required)
+  LINEAR_TEAM_ID             Linear Team ID (optional)
         """,
     )
 
@@ -91,18 +96,17 @@ def main() -> None:
 
     # Check for Claude Code OAuth token
     if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        print("Error: CLAUDE_CODE_OAUTH_TOKEN environment variable not set")
-        print("\nRun 'claude setup-token' after installing the Claude Code CLI.")
-        print("\nThen set it:")
-        print("  export CLAUDE_CODE_OAUTH_TOKEN='your-token-here'")
+        print("Error: CLAUDE_CODE_OAUTH_TOKEN not found in .env file")
+        print("\n1. Run 'claude setup-token' after installing the Claude Code CLI")
+        print("2. Copy .env.example to .env")
+        print("3. Add your token to .env: CLAUDE_CODE_OAUTH_TOKEN='your-token-here'")
         return
 
     # Check for Linear API key
     if not os.environ.get("LINEAR_API_KEY"):
-        print("Error: LINEAR_API_KEY environment variable not set")
-        print("\nGet your API key from: https://linear.app/YOUR-TEAM/settings/api")
-        print("\nThen set it:")
-        print("  export LINEAR_API_KEY='lin_api_xxxxxxxxxxxxx'")
+        print("Error: LINEAR_API_KEY not found in .env file")
+        print("\n1. Get your API key from: https://linear.app/YOUR-TEAM/settings/api")
+        print("2. Add it to .env: LINEAR_API_KEY='lin_api_xxxxxxxxxxxxx'")
         return
 
     # Automatically place projects in generations/ directory unless already specified

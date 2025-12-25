@@ -30,9 +30,16 @@ Before creating issues, you need to set up Linear:
 
 ### CRITICAL TASK: Create Linear Issues
 
+**IMPORTANT - Issue Count:**
+Create EXACTLY ONE issue per feature listed in the `<implementation_steps>` section of app_spec.txt.
+- Count the `<feature_N>` tags in the spec file
+- If the spec has 8 features → create 8 issues
+- If the spec has 50 features → create 50 issues
+- Do NOT create a fixed arbitrary number
+- Each `<feature_N>` in `<implementation_steps>` = 1 Linear issue
+
 Based on `app_spec.txt`, create Linear issues for each feature using the
-`mcp__linear__create_issue` tool. Create 50 detailed issues that
-comprehensively cover all features in the spec.
+`mcp__linear__create_issue` tool.
 
 **For each feature, create an issue with:**
 
@@ -66,7 +73,7 @@ priority: 1-4 based on importance (1=urgent/foundational, 4=low/polish)
 ```
 
 **Requirements for Linear Issues:**
-- Create 50 issues total covering all features in the spec
+- Create ONE issue per `<feature_N>` tag in `<implementation_steps>`
 - Mix of functional and style features (note category in description)
 - Order by priority: foundational features get priority 1-2, polish features get 3-4
 - Include detailed test steps in each issue description

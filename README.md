@@ -26,22 +26,34 @@ pip install -r requirements.txt
 
 ### 2. Set Up Authentication
 
-You need two authentication tokens:
+Create a `.env` file in the root directory by copying the example:
 
-**Claude Code OAuth Token:**
+```bash
+cp .env.example .env
+```
+
+Then configure your credentials in the `.env` file:
+
+**1. Claude Code OAuth Token:**
 ```bash
 # Generate the token using Claude Code CLI
 claude setup-token
 
-# Set the environment variable
-export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
+# Add to .env file:
+CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
 ```
 
-**Linear API Key:**
+**2. Linear API Key:**
 ```bash
 # Get your API key from: https://linear.app/YOUR-TEAM/settings/api
-export LINEAR_API_KEY='lin_api_xxxxxxxxxxxxx'
+# Add to .env file:
+LINEAR_API_KEY='lin_api_xxxxxxxxxxxxx'
+
+# Optional: Linear Team ID (if not set, agent will list teams)
+LINEAR_TEAM_ID='your-team-id'
 ```
+
+**Important:** The `.env` file is already in `.gitignore` - never commit it!
 
 ### 3. Verify Installation
 
@@ -142,12 +154,15 @@ Instead of local text files, agents communicate through:
 - **META Issue**: Session summaries and handoff notes
 - **Issue Status**: Todo / In Progress / Done workflow
 
-## Environment Variables
+## Configuration (.env file)
+
+All configuration is done via a `.env` file in the root directory.
 
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth token (from `claude setup-token`) | Yes |
 | `LINEAR_API_KEY` | Linear API key for MCP access | Yes |
+| `LINEAR_TEAM_ID` | Linear Team ID (if not set, agent will list teams and ask) | No |
 
 ## Command Line Options
 
@@ -268,11 +283,14 @@ Edit `security.py` to add or remove commands from `ALLOWED_COMMANDS`.
 
 ## Troubleshooting
 
-**"CLAUDE_CODE_OAUTH_TOKEN not set"**
-Run `claude setup-token` to generate a token, then export it.
+**"CLAUDE_CODE_OAUTH_TOKEN not found in .env file"**
+1. Run `claude setup-token` to generate a token
+2. Copy `.env.example` to `.env`
+3. Add your token to the `.env` file
 
-**"LINEAR_API_KEY not set"**
-Get your API key from `https://linear.app/YOUR-TEAM/settings/api`
+**"LINEAR_API_KEY not found in .env file"**
+1. Get your API key from `https://linear.app/YOUR-TEAM/settings/api`
+2. Add it to your `.env` file
 
 **"Appears to hang on first run"**
 Normal behavior. The initializer is creating a Linear project and 50 issues with detailed descriptions. Watch for `[Tool: mcp__linear__create_issue]` output.
@@ -281,7 +299,7 @@ Normal behavior. The initializer is creating a Linear project and 50 issues with
 The agent tried to run a disallowed command. Add it to `ALLOWED_COMMANDS` in `security.py` if needed.
 
 **"MCP server connection failed"**
-Verify your `LINEAR_API_KEY` is valid and has appropriate permissions. The Linear MCP server uses HTTP transport at `https://mcp.linear.app/mcp`.
+Verify your `LINEAR_API_KEY` in the `.env` file is valid and has appropriate permissions. The Linear MCP server uses HTTP transport at `https://mcp.linear.app/mcp`.
 
 ## Viewing Progress
 

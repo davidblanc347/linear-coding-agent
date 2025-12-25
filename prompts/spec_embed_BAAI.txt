@@ -1,0 +1,576 @@
+<project_specification>
+  <project_name>Library RAG - Migration to BGE-M3 Embeddings</project_name>
+
+  <overview>
+    Migrate the Library RAG embedding model from sentence-transformers MiniLM-L6 (384-dim)
+    to BAAI/bge-m3 (1024-dim) for superior performance on multilingual philosophical texts.
+
+    **Why BGE-M3?**
+    - 1024 dimensions vs 384 (2.7x richer semantic representation)
+    - 8192 token context vs 512 (16x longer sequences)
+    - Superior multilingual support (Greek, Latin, French, English)
+    - Better trained on academic/research texts
+    - Captures philosophical nuances more effectively
+
+    **Scope:**
+    This is a focused migration that only affects the vectorization layer.
+    LLM processing (Ollama/Mistral) remains completely unchanged.
+
+    **Migration Strategy:**
+    - Auto-detect GPU availability and configure accordingly
+    - Delete existing collections (384-dim vectors incompatible with 1024-dim)
+    - Recreate schema with BGE-M3 vectorizer
+    - Re-ingest existing 2 documents from cached chunks
+    - Validate search quality improvements
+  </overview>
+
+  <technology_stack>
+    <backend>
+      <weaviate>1.34.4 (no change)</weaviate>
+      <new_vectorizer>BAAI/bge-m3 via text2vec-transformers</new_vectorizer>
+      <old_vectorizer>sentence-transformers-multi-qa-MiniLM-L6-cos-v1</old_vectorizer>
+      <gpu_support>Auto-detect CUDA availability (ENABLE_CUDA="1" if GPU, "0" if CPU)</gpu_support>
+    </backend>
+    <unchanged>
+      <llm>Ollama/Mistral (no impact on LLM processing)</llm>
+      <ocr>Mistral OCR (no change)</ocr>
+      <pipeline>PDF pipeline steps 1-9 unchanged</pipeline>
+    </unchanged>
+  </technology_stack>
+
+  <prerequisites>
+    <environment_setup>
+      - Existing Library RAG application (generations/library_rag/)
+      - Docker and Docker Compose installed
+      - NVIDIA Docker runtime (if GPU available)
+      - Only 2 documents currently ingested (will be re-ingested)
+      - No production data to preserve
+      - RTX 4070 GPU available (will be auto-detected and used)
+    </environment_setup>
+  </prerequisites>
+
+  <architecture_impact>
+    <independent_components>
+      **LLM Processing (Steps 1-9):**
+      - OCR extraction (Mistral API)
+      - Metadata extraction (Ollama/Mistral)
+      - TOC extraction (Ollama/Mistral)
+      - Section classification (Ollama/Mistral)
+      - Semantic chunking (Ollama/Mistral)
+      - Cleaning and validation (Ollama/Mistral)
+
+      → **None of these are affected by embedding model change**
+
+      **Vectorization (Step 10):**
+      - Text → Vector conversion (text2vec-transformers in Weaviate)
+      - This is the ONLY component that changes
+      - Happens automatically during Weaviate ingestion
+      - No Python code changes required
+    </independent_components>
+
+    <breaking_changes>
+      **IMPORTANT: Vector dimensions are incompatible**
+
+      - Existing collections use 384-dim vectors (MiniLM-L6)
+      - New model generates 1024-dim vectors (BGE-M3)
+      - Weaviate cannot mix dimensions in same collection
+      - All collections must be deleted and recreated
+      - All documents must be re-ingested
+
+      **Why this is safe:**
+      - Only 2 documents currently ingested
+      - Source chunks.json files preserved in output/ directory
+      - No OCR/LLM re-processing needed (reuse existing chunks)
+      - No additional costs incurred
+      - Estimated total migration time: 20-25 minutes
+    </breaking_changes>
+  </architecture_impact>
+
+  <implementation_steps>
+    <feature_1>
+      <title>Complete BGE-M3 Setup with GPU Auto-Detection</title>
+      <description>
+        Atomic migration: GPU detection → Docker configuration → Schema deletion → Recreation.
+        This feature must be completed entirely in one session (cannot be partially done).
+
+        **Step 1: GPU Auto-Detection**
+        - Check for NVIDIA GPU availability: nvidia-smi or docker run --gpus all nvidia/cuda
+        - If GPU detected: Set ENABLE_CUDA="1"
+        - If no GPU: Set ENABLE_CUDA="0"
+        - Verify NVIDIA Docker runtime if GPU available
+
+        **Step 2: Update Docker Compose**
+        - Backup current docker-compose.yml to docker-compose.yml.backup
+        - Update text2vec-transformers service:
+          * Change image to: cr.weaviate.io/semitechnologies/transformers-inference:sentence-transformers-BAAI-bge-m3
+          * Set ENABLE_CUDA based on GPU detection
+          * Add GPU device mapping if CUDA enabled
+        - Update comments to reflect BGE-M3 model
+        - Stop containers: docker-compose down
+        - Remove old transformers image: docker rmi [old-image-name]
+        - Start new containers: docker-compose up -d
+        - Verify BGE-M3 loaded: docker-compose logs text2vec-transformers | grep -i "model"
+        - If GPU enabled, verify GPU usage: nvidia-smi (should show transformers process)
+
+        **Step 3: Delete Existing Collections**
+        - Create migrate_to_bge_m3.py script with safety checks
+        - List all existing collections and object counts
+        - Confirm deletion prompt: "Delete all collections? (yes/no)"
+        - Delete all collections: client.collections.delete_all()
+        - Verify deletion: client.collections.list_all() should return empty
+        - Log deleted collections and counts for reference
+
+        **Step 4: Recreate Schema with BGE-M3**
+        - Update schema.py docstring (line 40: MiniLM-L6 → BGE-M3)
+        - Add migration note at top of schema.py
+        - Run: python schema.py to recreate all collections
+        - Weaviate will auto-detect 1024-dim from text2vec-transformers service
+        - Verify collections created: Work, Document, Chunk, Summary
+        - Verify vectorizer configured: display_schema() should show text2vec-transformers
+        - Query text2vec-transformers service to confirm 1024 dimensions
+
+        **Validation:**
+        - All containers running (docker-compose ps)
+        - BGE-M3 model loaded successfully
+        - GPU utilized if available (check nvidia-smi)
+        - All collections exist with empty state
+        - Vector dimensions = 1024 (query Weaviate schema)
+
+        **Rollback if needed:**
+        - Restore docker-compose.yml.backup
+        - docker-compose down && docker-compose up -d
+        - python schema.py to recreate with old model
+      </description>
+      <priority>1</priority>
+      <category>migration</category>
+      <test_steps>
+        1. Run GPU detection: nvidia-smi or equivalent
+        2. Verify ENABLE_CUDA set correctly based on GPU availability
+        3. Backup docker-compose.yml created
+        4. Stop containers: docker-compose down
+        5. Start with BGE-M3: docker-compose up -d
+        6. Check logs: docker-compose logs text2vec-transformers
+        7. Verify "BAAI/bge-m3" appears in logs
+        8. If GPU: verify nvidia-smi shows transformers process
+        9. Run migrate_to_bge_m3.py and confirm deletion
+        10. Verify all collections deleted
+        11. Run schema.py to recreate
+        12. Verify 4 collections exist: Work, Document, Chunk, Summary
+        13. Query Weaviate API to confirm vector dimensions = 1024
+        14. Verify collections are empty (object count = 0)
+      </test_steps>
+    </feature_1>
+
+    <feature_2>
+      <title>Document Re-ingestion from Cached Chunks</title>
+      <description>
+        Re-ingest the 2 existing documents using their cached chunks.json files.
+        No OCR or LLM re-processing needed (saves time and cost).
+
+        **Process:**
+        1. Identify existing documents in output/ directory
+        2. For each document directory:
+           - Read {document_name}_chunks.json
+           - Verify chunk structure contains all required fields
+           - Extract Work metadata (title, author, year, language, genre)
+           - Extract Document metadata (sourceId, edition, pages, toc, hierarchy)
+           - Extract Chunk data (text, keywords, sectionPath, etc.)
+
+        3. Ingest to Weaviate using utils/weaviate_ingest.py:
+           - Create Work object (if not exists)
+           - Create Document object with nested Work reference
+           - Create Chunk objects with nested Document and Work references
+           - text2vec-transformers will auto-generate 1024-dim vectors
+
+        4. Verify ingestion success:
+           - Query Weaviate for each document by sourceId
+           - Verify chunk counts match original
+           - Check that vectors are 1024 dimensions
+           - Verify nested Work/Document metadata accessible
+
+        **Example code:**
+        ```python
+        import json
+        from pathlib import Path
+        from utils.weaviate_ingest import (
+            create_work, create_document, ingest_chunks_to_weaviate
+        )
+
+        output_dir = Path("output")
+        for doc_dir in output_dir.iterdir():
+            if doc_dir.is_dir():
+                chunks_file = doc_dir / f"{doc_dir.name}_chunks.json"
+                if chunks_file.exists():
+                    with open(chunks_file) as f:
+                        data = json.load(f)
+
+                    # Create Work
+                    work_id = create_work(client, data["work_metadata"])
+
+                    # Create Document
+                    doc_id = create_document(client, data["document_metadata"], work_id)
+
+                    # Ingest chunks
+                    ingest_chunks_to_weaviate(client, data["chunks"], doc_id, work_id)
+
+                    print(f"✓ Ingested {doc_dir.name}")
+        ```
+
+        **Success criteria:**
+        - All documents from output/ directory ingested
+        - Chunk counts match original (verify in Weaviate)
+        - No vectorization errors in logs
+        - All vectors are 1024 dimensions
+      </description>
+      <priority>1</priority>
+      <category>data</category>
+      <test_steps>
+        1. List all directories in output/
+        2. For each directory, verify {name}_chunks.json exists
+        3. Load first chunks.json and inspect structure
+        4. Run re-ingestion script for all documents
+        5. Query Weaviate for total Chunk count
+        6. Verify count matches sum of all original chunks
+        7. Query a sample chunk and verify:
+           - Vector dimensions = 1024
+           - Nested work.title and work.author present
+           - Nested document.sourceId present
+        8. Verify no errors in Weaviate logs
+        9. Check text2vec-transformers logs for vectorization activity
+      </test_steps>
+    </feature_2>
+
+    <feature_3>
+      <title>Search Quality Validation and Performance Testing</title>
+      <description>
+        Validate that BGE-M3 provides superior search quality for philosophical texts.
+        Test multilingual capabilities and measure performance improvements.
+
+        **Create test script: test_bge_m3_quality.py**
+
+        **Test 1: Multilingual Queries**
+        - Test French philosophical terms: "justice", "vertu", "liberté"
+        - Test English philosophical terms: "virtue", "knowledge", "ethics"
+        - Test Greek philosophical terms: "ἀρετή" (arete), "τέλος" (telos), "ψυχή" (psyche)
+        - Test Latin philosophical terms: "virtus", "sapientia", "forma"
+        - Verify results are semantically relevant
+        - Compare with expected passages (if baseline available)
+
+        **Test 2: Long Query Handling**
+        - Test query with 100+ words (BGE-M3 supports 8192 tokens)
+        - Test query with complex philosophical argument
+        - Verify no truncation warnings
+        - Verify semantically appropriate results
+
+        **Test 3: Semantic Understanding**
+        - Query: "What is the nature of reality?"
+        - Expected: Results about ontology, metaphysics, being
+        - Query: "How should we live?"
+        - Expected: Results about ethics, virtue, good life
+        - Query: "What can we know?"
+        - Expected: Results about epistemology, knowledge, certainty
+
+        **Test 4: Performance Metrics**
+        - Measure query latency (should be &lt;500ms)
+        - Measure indexing speed during ingestion
+        - Monitor GPU utilization (if enabled)
+        - Monitor memory usage (~2GB for BGE-M3)
+        - Compare with baseline (MiniLM-L6) if metrics available
+
+        **Test 5: Vector Dimension Verification**
+        - Query Weaviate schema API
+        - Verify all Chunk vectors are 1024 dimensions
+        - Verify no 384-dim vectors remain (from old model)
+
+        **Example test script:**
+        ```python
+        import weaviate
+        import weaviate.classes.query as wvq
+        import time
+
+        client = weaviate.connect_to_local()
+        chunks = client.collections.get("Chunk")
+
+        # Test multilingual
+        test_queries = [
+            ("justice", "French philosophical concept"),
+            ("ἀρετή", "Greek virtue/excellence"),
+            ("What is the good life?", "Long philosophical query"),
+        ]
+
+        for query, description in test_queries:
+            start = time.time()
+            result = chunks.query.near_text(
+                query=query,
+                limit=5,
+                return_metadata=wvq.MetadataQuery(distance=True),
+            )
+            latency = (time.time() - start) * 1000
+
+            print(f"\nQuery: {query} ({description})")
+            print(f"Latency: {latency:.1f}ms")
+
+            for obj in result.objects:
+                similarity = (1 - obj.metadata.distance) * 100
+                print(f"  [{similarity:.1f}%] {obj.properties['work']['title']}")
+                print(f"    {obj.properties['text'][:150]}...")
+
+        client.close()
+        ```
+
+        **Document results:**
+        - Create SEARCH_QUALITY_RESULTS.md with:
+          * Sample queries and results
+          * Performance metrics
+          * Comparison with MiniLM-L6 (if available)
+          * Notes on quality improvements observed
+      </description>
+      <priority>1</priority>
+      <category>validation</category>
+      <test_steps>
+        1. Create test_bge_m3_quality.py script
+        2. Run multilingual query tests (French, English, Greek, Latin)
+        3. Verify results are semantically relevant
+        4. Test long queries (100+ words)
+        5. Measure average query latency over 10 queries
+        6. Verify latency &lt;500ms
+        7. Query Weaviate schema to verify vector dimensions = 1024
+        8. If GPU enabled, monitor nvidia-smi during queries
+        9. Document search quality improvements in markdown file
+        10. Compare results with expected philosophical passages
+      </test_steps>
+    </feature_3>
+
+    <feature_4>
+      <title>Documentation Update</title>
+      <description>
+        Update all documentation to reflect BGE-M3 migration.
+
+        **Files to update:**
+
+        1. **docker-compose.yml**
+           - Update comments to mention BGE-M3
+           - Note GPU auto-detection logic
+           - Document ENABLE_CUDA setting
+
+        2. **README.md**
+           - Update "Embedding Model" section
+           - Change: MiniLM-L6 (384-dim) → BGE-M3 (1024-dim)
+           - Add benefits: multilingual, longer context, better quality
+           - Update docker-compose instructions if needed
+
+        3. **CLAUDE.md**
+           - Update schema documentation (line ~35)
+           - Change vectorizer description
+           - Update example queries to showcase multilingual
+           - Add migration notes section
+
+        4. **schema.py**
+           - Update module docstring (line 40)
+           - Change "MiniLM-L6" references to "BGE-M3"
+           - Add migration date and rationale in comments
+           - Update display_schema() output text
+
+        5. **Create MIGRATION_BGE_M3.md**
+           - Document migration process
+           - Explain why BGE-M3 chosen
+           - List breaking changes (dimension incompatibility)
+           - Document rollback procedure
+           - Include before/after comparison
+           - Note LLM independence (Ollama/Mistral unaffected)
+           - Document search quality improvements
+
+        6. **MCP_README.md** (if exists)
+           - Update technical details about embeddings
+           - Update vector dimension references
+
+        **Migration notes template:**
+        ```markdown
+        # BGE-M3 Migration - [Date]
+
+        ## Why
+        - Superior multilingual support (Greek, Latin, French, English)
+        - 1024-dim vectors (2.7x richer than MiniLM-L6)
+        - 8192 token context (16x longer than MiniLM-L6)
+        - Better trained on academic/philosophical texts
+
+        ## What Changed
+        - Embedding model: MiniLM-L6 → BAAI/bge-m3
+        - Vector dimensions: 384 → 1024
+        - All collections deleted and recreated
+        - 2 documents re-ingested
+
+        ## Impact
+        - LLM processing (Ollama/Mistral): **No impact**
+        - Search quality: **Significantly improved**
+        - GPU acceleration: **Auto-enabled** (if available)
+        - Migration time: ~25 minutes
+
+        ## Search Quality Improvements
+        [Insert results from Feature 3 testing]
+        ```
+
+        **Verify:**
+        - Search all files for "MiniLM-L6" references
+        - Search all files for "384" dimension references
+        - Replace with "BGE-M3" and "1024" respectively
+        - Grep for "text2vec" and update comments where needed
+      </description>
+      <priority>2</priority>
+      <category>documentation</category>
+      <test_steps>
+        1. Update docker-compose.yml comments
+        2. Update README.md embedding section
+        3. Update CLAUDE.md schema documentation
+        4. Update schema.py docstring and comments
+        5. Create MIGRATION_BGE_M3.md with full migration notes
+        6. Search codebase for "MiniLM-L6" references: grep -r "MiniLM" .
+        7. Replace all with "BGE-M3"
+        8. Search for "384" dimension references
+        9. Replace with "1024" where appropriate
+        10. Review all updated files for consistency
+        11. Verify no outdated references remain
+      </test_steps>
+    </feature_4>
+  </implementation_steps>
+
+  <deliverables>
+    <code>
+      - Updated docker-compose.yml with BGE-M3 and GPU auto-detection
+      - migrate_to_bge_m3.py script for safe collection deletion
+      - Updated schema.py with BGE-M3 documentation
+      - Re-ingestion script (or integration with existing utils)
+      - test_bge_m3_quality.py for validation
+    </code>
+
+    <documentation>
+      - MIGRATION_BGE_M3.md with complete migration notes
+      - Updated README.md with BGE-M3 details
+      - Updated CLAUDE.md with schema changes
+      - SEARCH_QUALITY_RESULTS.md with validation results
+      - Updated inline comments in all affected files
+    </documentation>
+  </deliverables>
+
+  <success_criteria>
+    <functionality>
+      - BGE-M3 model loads successfully in Weaviate
+      - GPU auto-detected and utilized if available
+      - All collections recreated with 1024-dim vectors
+      - Documents re-ingested successfully from cached chunks
+      - Semantic search returns relevant results
+      - Multilingual queries work correctly (Greek, Latin, French, English)
+    </functionality>
+
+    <quality>
+      - Search quality demonstrably improved vs MiniLM-L6
+      - Greek/Latin philosophical terms properly embedded
+      - Long queries (&gt;512 tokens) handled correctly
+      - No vectorization errors in logs
+      - Vector dimensions verified as 1024 across all collections
+    </quality>
+
+    <performance>
+      - Query latency acceptable (&lt;500ms average)
+      - GPU utilized if available (verified via nvidia-smi)
+      - Memory usage stable (~2GB for text2vec-transformers)
+      - Indexing throughput acceptable during re-ingestion
+      - No performance degradation vs MiniLM-L6
+    </performance>
+
+    <documentation>
+      - All documentation updated to reflect BGE-M3
+      - No outdated MiniLM-L6 references remain
+      - Migration process fully documented
+      - Rollback procedure documented and tested
+      - Search quality improvements quantified
+    </documentation>
+  </success_criteria>
+
+  <migration_notes>
+    <breaking_changes>
+      **IMPORTANT: This is a destructive migration**
+
+      - All existing Weaviate collections must be deleted
+      - Vector dimensions change: 384 → 1024 (incompatible)
+      - Weaviate cannot mix dimensions in same collection
+      - All documents must be re-ingested
+
+      **Low impact:**
+      - Only 2 documents currently ingested
+      - Source chunks.json files preserved in output/ directory
+      - No OCR re-processing needed (saves ~0.006€ per doc)
+      - No LLM re-processing needed (saves time and cost)
+      - Estimated migration time: 20-25 minutes total
+    </breaking_changes>
+
+    <rollback_plan>
+      If BGE-M3 causes issues, rollback is straightforward:
+
+      1. Stop containers: docker-compose down
+      2. Restore backup: mv docker-compose.yml.backup docker-compose.yml
+      3. Start containers: docker-compose up -d
+      4. Recreate schema: python schema.py
+      5. Re-ingest documents from output/ directory (same process as Feature 2)
+
+      **Time to rollback: ~15 minutes**
+
+      **Note:** Backup of docker-compose.yml created automatically in Feature 1
+    </rollback_plan>
+
+    <gpu_auto_detection>
+      **GPU is NOT optional - it's auto-detected**
+
+      The system will automatically detect GPU availability and configure accordingly:
+
+      - **If GPU available (RTX 4070 detected):**
+        * ENABLE_CUDA="1" in docker-compose.yml
+        * GPU device mapping added to text2vec-transformers service
+        * Vectorization uses GPU (5-10x faster)
+        * ~2GB VRAM used (plenty of headroom on 4070)
+        * Ollama/Qwen can still use remaining VRAM
+
+      - **If NO GPU available:**
+        * ENABLE_CUDA="0" in docker-compose.yml
+        * Vectorization uses CPU (slower but functional)
+        * No GPU device mapping needed
+
+      **Detection method:**
+      ```bash
+      # Try nvidia-smi
+      if command -v nvidia-smi &> /dev/null; then
+          GPU_AVAILABLE=true
+      else
+          # Try Docker GPU test
+          if docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+              GPU_AVAILABLE=true
+          else
+              GPU_AVAILABLE=false
+          fi
+      fi
+      ```
+
+      **User has RTX 4070:** GPU will be detected and used automatically.
+    </gpu_auto_detection>
+
+    <llm_independence>
+      **Ollama/Mistral are NOT affected by this change**
+
+      The embedding model migration ONLY affects Weaviate vectorization (pipeline step 10).
+      All LLM processing (steps 1-9) remains unchanged:
+      - OCR extraction (Mistral API)
+      - Metadata extraction (Ollama/Mistral)
+      - TOC extraction (Ollama/Mistral)
+      - Section classification (Ollama/Mistral)
+      - Semantic chunking (Ollama/Mistral)
+      - Cleaning and validation (Ollama/Mistral)
+
+      **No Python code changes required.**
+      Weaviate handles vectorization automatically via text2vec-transformers service.
+
+      **Ollama can still use GPU:**
+      BGE-M3 uses ~2GB VRAM. RTX 4070 has 12GB.
+      Ollama/Qwen can use remaining 10GB without conflict.
+    </llm_independence>
+  </migration_notes>
+</project_specification>

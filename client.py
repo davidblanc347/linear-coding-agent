@@ -9,10 +9,14 @@ import json
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk.types import HookMatcher
 
 from security import bash_security_hook
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Puppeteer MCP tools for browser automation
@@ -85,15 +89,17 @@ def create_client(project_dir: Path, model: str) -> ClaudeSDKClient:
     api_key = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
     if not api_key:
         raise ValueError(
-            "CLAUDE_CODE_OAUTH_TOKEN environment variable not set.\n"
-            "Run 'claude setup-token after installing the Claude Code CLI."
+            "CLAUDE_CODE_OAUTH_TOKEN not set in .env file.\n"
+            "Run 'claude setup-token' after installing the Claude Code CLI,\n"
+            "then add the token to your .env file."
         )
 
     linear_api_key = os.environ.get("LINEAR_API_KEY")
     if not linear_api_key:
         raise ValueError(
-            "LINEAR_API_KEY environment variable not set.\n"
-            "Get your API key from: https://linear.app/YOUR-TEAM/settings/api"
+            "LINEAR_API_KEY not set in .env file.\n"
+            "Get your API key from: https://linear.app/YOUR-TEAM/settings/api\n"
+            "then add it to your .env file."
         )
 
     # Create comprehensive security settings

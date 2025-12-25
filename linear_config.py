@@ -7,10 +7,14 @@ These values are used in prompts and for project state management.
 """
 
 import os
+from dotenv import load_dotenv
 
-# Environment variables (must be set before running)
+# Load environment variables from .env file
+load_dotenv()
+
+# Environment variables (loaded from .env file)
 LINEAR_API_KEY = os.environ.get("LINEAR_API_KEY")
-LINEAR_TEAM_ID  = os.environ.get("LINEAR_TEAM_ID") 
+LINEAR_TEAM_ID = os.environ.get("LINEAR_TEAM_ID") 
 
 # Default number of issues to create (can be overridden via command line)
 DEFAULT_ISSUE_COUNT = 50

@@ -60,6 +60,13 @@ using the `mcp__linear__create_issue` tool.
 - Do NOT modify existing issues
 - Only create NEW issues for the NEW features
 
+**IMPORTANT - Issue Count:**
+Create EXACTLY ONE issue per feature listed in the `<implementation_steps>` section of the new spec file.
+- If the spec has 8 features → create 8 issues
+- If the spec has 15 features → create 15 issues
+- Do NOT create a fixed number like 50 issues
+- Each `<feature_N>` in the spec = 1 Linear issue
+
 **For each NEW feature, create an issue with:**
 
 ```

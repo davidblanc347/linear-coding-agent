@@ -29,6 +29,11 @@ ALLOWED_COMMANDS = {
     # Node.js development
     "npm",
     "node",
+    # Python development
+    "python",
+    "python3",
+    "mypy",
+    "pytest",
     # Version control
     "git",
     # Process management
