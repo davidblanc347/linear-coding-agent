@@ -49,7 +49,21 @@
       "Bash(claude doctor:*)",
       "Bash(dir /s /b \".claude_settings.json\")",
       "Bash(dir /s /b \"settings.local.json\")",
-      "Bash(python -m json.tool:*)"
+      "Bash(python -m json.tool:*)",
+      "Bash(del NUL)",
+      "Bash(lsof:*)",
+      "Bash(dir:*)",
+      "Bash(docker ps:*)",
+      "Bash(wmic process where \"name=''node.exe'' OR name=''python.exe''\" get ProcessId,CommandLine /format:list)",
+      "Bash(cmd /c \"cd C:\\\\GitHub\\\\Linear_coding_ikario_body\\\\generations\\\\ikario_body && restart.bat\")",
+      "Bash(cmd /c \"C:\\\\GitHub\\\\linear_coding_library_rag\\\\generations\\\\library_rag\\\\diagnose_wsl.bat\")",
+      "Bash(wsl --status:*)",
+      "Bash(wsl --list:*)",
+      "Bash(docker version:*)",
+      "Bash(docker info:*)",
+      "Bash(docker stats:*)",
+      "Bash(timeout:*)",
+      "Bash(docker inspect:*)"
     ]
   }
 }
