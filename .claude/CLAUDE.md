@@ -2,6 +2,29 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Comportement de l'assistant
+
+**RÈGLE ABSOLUE** : L'assistant doit **TOUJOURS demander confirmation explicite** avant :
+- Créer ou modifier des fichiers
+- Exécuter des commandes Bash (sauf lecture: ls, cat, git status, docker ps, etc.)
+- Installer des dépendances
+- Modifier la configuration Docker
+- Effectuer des opérations git (commit, push, pull)
+
+**Mode de travail requis** :
+1. **Analyser** : Comprendre la demande de l'utilisateur
+2. **Expliquer** : Proposer une solution claire avec les avantages/inconvénients
+3. **ATTENDRE** : Ne JAMAIS commencer à coder sans accord explicite ("oui", "ok", "vas-y", "code", etc.)
+4. **Implémenter** : Seulement après accord, exécuter les modifications
+
+**Exceptions** (pas besoin de confirmation) :
+- Commandes de lecture : `ls`, `cat`, `git status`, `git log`, `docker ps`, `curl` (GET)
+- Recherche de fichiers : `grep`, `find`, `Glob`
+- Lecture de fichiers : `Read`
+- Affichage d'informations : `WebSearch`, `WebFetch`
+
+**En cas de doute** : TOUJOURS demander avant d'agir.
+
 ## Overview
 
 This is an autonomous coding agent framework that uses Claude Agent SDK with Linear integration for project management. The framework enables long-running autonomous development sessions where agents create complete applications from XML specifications.
