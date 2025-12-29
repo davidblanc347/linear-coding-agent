@@ -64,18 +64,24 @@ pip show claude-code-sdk  # Check SDK is installed
 
 ## Quick Start
 
+### Option 1: Use the Example (Claude Clone)
+
 ```bash
-# Initialize a new project
-python autonomous_agent_demo.py --project-dir ./my_project
+# Initialize the Claude Clone example project
+python autonomous_agent_demo.py --project-dir ./ikario_body
 
 # Add new features to an existing project
-python autonomous_agent_demo.py --project-dir ./my_project --new-spec app_spec_theme_customization.txt
+python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_theme_customization.txt
 ```
 
 For testing with limited iterations:
 ```bash
-python autonomous_agent_demo.py --project-dir ./my_project --max-iterations 3
+python autonomous_agent_demo.py --project-dir ./ikario_body --max-iterations 3
 ```
+
+### Option 2: Create Your Own Application
+
+See the [Creating a New Application](#creating-a-new-application) section below for detailed instructions on creating a custom application from scratch.
 
 ## How It Works
 
@@ -142,7 +148,7 @@ The **Initializer Bis** agent allows you to add new features to an existing proj
 **Example:**
 ```bash
 # Add theme customization features to an existing project
-python autonomous_agent_demo.py --project-dir ./my_project --new-spec app_spec_theme_customization.txt
+python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_theme_customization.txt
 ```
 
 This will create multiple Linear issues (one per `<feature>` tag) that will be worked on by subsequent coding agent sessions.
@@ -192,7 +198,6 @@ linear-agent-harness/
 │   ├── initializer_prompt.md # First session prompt (creates Linear issues)
 │   ├── initializer_bis_prompt.md # Prompt for adding new features
 │   └── coding_prompt.md      # Continuation session prompt (works issues)
-├── GUIDE_NEW_APP.md          # Guide pour créer une nouvelle application
 └── requirements.txt          # Python dependencies
 ```
 
@@ -201,7 +206,7 @@ linear-agent-harness/
 After running, your project directory will contain:
 
 ```
-my_project/
+ikario_body/
 ├── .linear_project.json      # Linear project state (marker file)
 ├── app_spec.txt              # Copied specification
 ├── app_spec_theme_customization.txt  # New spec file (if using --new-spec)
@@ -241,27 +246,260 @@ The initializer agent will create:
 
 All subsequent coding agents will work from this Linear project.
 
+## Creating a New Application
+
+This framework is designed to be **generic and reusable** for any web application. Here's how to create your own application from scratch.
+
+### Understanding the Framework Structure
+
+#### Generic Framework Files (DO NOT MODIFY)
+
+These files work for all applications and should remain unchanged:
+
+```
+linear-coding-agent/
+├── autonomous_agent_demo.py  # Main entry point
+├── agent.py                  # Agent session logic
+├── client.py                 # Claude SDK + MCP client configuration
+├── security.py               # Bash command allowlist and validation
+├── progress.py               # Progress tracking utilities
+├── prompts.py                # Prompt loading utilities
+├── linear_config.py          # Linear configuration constants
+├── requirements.txt          # Python dependencies
+└── prompts/
+    ├── initializer_prompt.md      # First session prompt template
+    ├── initializer_bis_prompt.md  # New features prompt template
+    └── coding_prompt.md           # Continuation session prompt template
+```
+
+#### Application-Specific Files (CREATE THESE)
+
+The **only file you need to create** is your application specification:
+
+```
+prompts/
+└── app_spec.txt  # Your application specification (XML format)
+```
+
+### Step-by-Step Guide
+
+#### Step 1: Create Your Specification File
+
+Create `prompts/app_spec.txt` using this XML structure:
+
+```xml
+<project_specification>
+  <project_name>Your Application Name</project_name>
+
+  <overview>
+    Complete description of your application. Explain what you want to build,
+    main objectives, and key features.
+  </overview>
+
+  <technology_stack>
+    <frontend>
+      <framework>React with Vite</framework>
+      <styling>Tailwind CSS</styling>
+      <state_management>React hooks</state_management>
+    </frontend>
+    <backend>
+      <runtime>Node.js with Express</runtime>
+      <database>SQLite</database>
+    </backend>
+  </technology_stack>
+
+  <prerequisites>
+    <environment_setup>
+      - List of prerequisites (dependencies, API keys, etc.)
+    </environment_setup>
+  </prerequisites>
+
+  <core_features>
+    <feature_1>
+      <title>Feature 1 Title</title>
+      <description>Detailed description</description>
+      <priority>1</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Test step 1
+        2. Test step 2
+      </test_steps>
+    </feature_1>
+
+    <feature_2>
+      <!-- More features -->
+    </feature_2>
+  </core_features>
+</project_specification>
+```
+
+#### Step 2: Define Your Features
+
+Each feature should have:
+
+- **Title**: Clear, descriptive title
+- **Description**: Complete explanation of what it does
+- **Priority**: 1 (urgent) to 4 (optional)
+- **Category**: `frontend`, `backend`, `database`, `auth`, `integration`, etc.
+- **Test Steps**: Precise verification steps
+
+Example feature:
+
+```xml
+<feature_1>
+  <title>User Authentication - Login Flow</title>
+  <description>
+    Implement authentication system with:
+    - Login form (email/password)
+    - Client and server-side validation
+    - JWT session management
+    - Password reset page
+  </description>
+  <priority>1</priority>
+  <category>auth</category>
+  <test_steps>
+    1. Access login page
+    2. Enter invalid email → see error
+    3. Enter valid credentials → redirect to dashboard
+    4. Verify JWT token is stored
+    5. Test logout functionality
+  </test_steps>
+</feature_1>
+```
+
+#### Step 3: Launch Initialization
+
+Once your `app_spec.txt` is ready:
+
+```bash
+python autonomous_agent_demo.py --project-dir ./my_new_app
+```
+
+The initializer agent will:
+1. Read your `app_spec.txt`
+2. Create a Linear project
+3. Create ~50 Linear issues based on your spec
+4. Initialize project structure, `init.sh`, and git
+
+#### Step 4: Monitor Development
+
+Coding agents will then:
+- Work on Linear issues one by one
+- Implement features
+- Test with Puppeteer browser automation
+- Update issues with implementation comments
+- Mark issues as complete
+
+### Minimal Example
+
+Here's a minimal Todo App example to get started:
+
+```xml
+<project_specification>
+  <project_name>Todo App - Task Manager</project_name>
+
+  <overview>
+    Simple web application for managing task lists.
+    Users can create, edit, complete, and delete tasks.
+  </overview>
+
+  <technology_stack>
+    <frontend>
+      <framework>React with Vite</framework>
+      <styling>Tailwind CSS</styling>
+    </frontend>
+    <backend>
+      <runtime>Node.js with Express</runtime>
+      <database>SQLite</database>
+    </backend>
+  </technology_stack>
+
+  <core_features>
+    <feature_1>
+      <title>Main Interface - Task List</title>
+      <description>Display a list of all tasks with their status</description>
+      <priority>1</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Open application
+        2. Verify task list displays
+      </test_steps>
+    </feature_1>
+
+    <feature_2>
+      <title>Create New Task</title>
+      <description>Form to add a new task to the list</description>
+      <priority>1</priority>
+      <category>frontend</category>
+      <test_steps>
+        1. Click "New Task"
+        2. Enter a title
+        3. Click "Add"
+        4. Verify task appears in list
+      </test_steps>
+    </feature_2>
+  </core_features>
+</project_specification>
+```
+
+### Best Practices
+
+#### 1. Be Detailed but Structured
+
+Each feature must have:
+- Clear title
+- Complete description of functionality
+- Precise test steps
+- Priority (1=urgent, 4=optional)
+
+#### 2. Use Consistent XML Format
+
+Follow the structure shown above for all features using `<feature_X>` tags.
+
+#### 3. Organize by Categories
+
+Group features by category:
+- `auth`: Authentication
+- `frontend`: User interface
+- `backend`: API and server logic
+- `database`: Models and migrations
+- `integration`: External integrations
+
+#### 4. Prioritize Features
+
+- **Priority 1**: Critical features (auth, database)
+- **Priority 2**: Important features (core functionality)
+- **Priority 3**: Secondary features (UX improvements)
+- **Priority 4**: Nice-to-have (polish, optimizations)
+
+### Using the Claude Clone as Reference
+
+The Claude Clone example in `prompts/app_spec.txt` is excellent reference material:
+
+#### ✅ Elements to Copy/Adapt:
+
+1. **XML Structure**: Overall structure with `<project_specification>`, `<overview>`, `<technology_stack>`, etc.
+2. **Feature Format**: How to structure `<feature_X>` tags with all required fields
+3. **Technical Details**: How to describe technology stack, prerequisites, API endpoints, database schema, UI specs
+
+#### ❌ Elements NOT to Copy:
+
+1. **Specific Content**: Details about "Claude API", "artifacts", "conversations" are app-specific
+2. **Business Features**: Adapt features to your application's needs
+
+### Checklist for New Application
+
+- [ ] Create `prompts/app_spec.txt` with your specification
+- [ ] Define `<project_name>` for your application
+- [ ] Write complete `<overview>`
+- [ ] Specify `<technology_stack>` (frontend + backend)
+- [ ] List all `<prerequisites>`
+- [ ] Define all `<core_features>` with `<feature_X>` tags
+- [ ] Add `<test_steps>` for each feature
+- [ ] Launch: `python autonomous_agent_demo.py --project-dir ./my_app`
+- [ ] Verify in Linear that issues are created correctly
+
 ## Customization
-
-### Creating a New Application from Scratch
-
-To create a **completely new application** (not based on the Claude Clone example):
-
-1. **Read the guide**: See [GUIDE_NEW_APP.md](GUIDE_NEW_APP.md) for detailed instructions
-2. **Use the template**: Copy `prompts/app_spec_template.txt` as a starting point
-3. **Reference the example**: Use `prompts/app_spec.txt` (Claude Clone) as a reference for structure and detail level
-4. **Create your spec**: Write your `prompts/app_spec.txt` with your application specification
-5. **Launch**: Run `python autonomous_agent_demo.py --project-dir ./my_new_app`
-
-**Key points:**
-- Keep the framework files unchanged (they're generic and reusable)
-- Only create/modify `prompts/app_spec.txt` for your new application
-- Use the XML structure from the Claude Clone example as a template
-- Define features with `<feature_X>` tags - each will become a Linear issue
-
-### Changing the Application
-
-Edit `prompts/app_spec.txt` to specify a different application to build.
 
 ### Adding New Features to Existing Projects
 
@@ -269,7 +507,7 @@ Edit `prompts/app_spec.txt` to specify a different application to build.
 2. Format it with `<feature>` tags following the same structure as `app_spec.txt`
 3. Run with `--new-spec` flag:
    ```bash
-   python autonomous_agent_demo.py --project-dir ./my_project --new-spec app_spec_new_feature.txt
+   python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_new_feature.txt
    ```
 4. The Initializer Bis agent will create new Linear issues for each feature in the spec file
 
