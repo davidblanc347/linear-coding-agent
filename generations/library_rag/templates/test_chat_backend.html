@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Chat Backend</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 1000px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #555;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: inherit;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .output {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .output h3 {
+            margin-top: 0;
+        }
+        .context {
+            background: #e3f2fd;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        .context-item {
+            background: white;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            border-left: 3px solid #2196f3;
+        }
+        .response {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: -apple-system, system-ui, sans-serif;
+            line-height: 1.6;
+            min-height: 100px;
+        }
+        .status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .status-searching { background: #fff3cd; color: #856404; }
+        .status-generating { background: #d1ecf1; color: #0c5460; }
+        .status-complete { background: #d4edda; color: #155724; }
+        .status-error { background: #f8d7da; color: #721c24; }
+        .log {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Chat Backend RAG</h1>
+
+        <div class="form-group">
+            <label for="question">Question :</label>
+            <textarea id="question" placeholder="Qu'est-ce que la vertu ?">Qu'est-ce que la vertu ?</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="provider">Provider :</label>
+            <select id="provider">
+                <option value="mistral">Mistral API</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI</option>
+                <option value="ollama">Ollama (local)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="model">Model :</label>
+            <select id="model">
+                <!-- Mistral models -->
+                <option value="mistral-small-latest" data-provider="mistral">mistral-small-latest</option>
+                <option value="mistral-large-latest" data-provider="mistral">mistral-large-latest</option>
+
+                <!-- Anthropic models -->
+                <option value="claude-sonnet-4-5-20250929" data-provider="anthropic">claude-sonnet-4-5</option>
+                <option value="claude-opus-4-5-20251101" data-provider="anthropic">claude-opus-4-5</option>
+
+                <!-- OpenAI models -->
+                <option value="gpt-5.2" data-provider="openai">ChatGPT 5.2</option>
+                <option value="gpt-4o" data-provider="openai">GPT-4o</option>
+                <option value="gpt-4o-mini" data-provider="openai">GPT-4o Mini</option>
+                <option value="o1-preview" data-provider="openai">o1-preview</option>
+
+                <!-- Ollama models -->
+                <option value="qwen2.5:7b" data-provider="ollama">qwen2.5:7b</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="limit">Nombre de contextes RAG :</label>
+            <input type="number" id="limit" value="3" min="1" max="10">
+        </div>
+
+        <button id="sendBtn" onclick="sendQuestion()">Envoyer</button>
+
+        <div class="output" id="output" style="display: none;">
+            <h3>Résultat :</h3>
+            <div class="log" id="log"></div>
+            <div id="contextSection" style="display: none;">
+                <h4>📚 Contexte RAG :</h4>
+                <div class="context" id="context"></div>
+            </div>
+            <div id="responseSection" style="display: none;">
+                <h4>💬 Réponse :</h4>
+                <div class="response" id="response"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-select model when provider changes
+        document.getElementById('provider').addEventListener('change', function() {
+            const provider = this.value;
+            const modelSelect = document.getElementById('model');
+            const options = modelSelect.querySelectorAll('option');
+
+            for (let option of options) {
+                if (option.dataset.provider === provider) {
+                    option.selected = true;
+                    break;
+                }
+            }
+        });
+
+        async function sendQuestion() {
+            const question = document.getElementById('question').value.trim();
+            const provider = document.getElementById('provider').value;
+            const model = document.getElementById('model').value;
+            const limit = parseInt(document.getElementById('limit').value);
+
+            if (!question) {
+                alert('Veuillez entrer une question');
+                return;
+            }
+
+            // Reset UI
+            document.getElementById('output').style.display = 'block';
+            document.getElementById('contextSection').style.display = 'none';
+            document.getElementById('responseSection').style.display = 'none';
+            document.getElementById('context').innerHTML = '';
+            document.getElementById('response').textContent = '';
+            document.getElementById('sendBtn').disabled = true;
+
+            // Log
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML = `<span class="status status-searching">Envoi...</span>`;
+
+            try {
+                // Step 1: POST /chat/send
+                const response = await fetch('/chat/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question, provider, model, limit })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Erreur HTTP');
+                }
+
+                const data = await response.json();
+                const sessionId = data.session_id;
+
+                logDiv.innerHTML = `<span class="status status-generating">Session: ${sessionId}</span>`;
+
+                // Step 2: SSE /chat/stream/<session_id>
+                const eventSource = new EventSource(`/chat/stream/${sessionId}`);
+
+                eventSource.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+
+                        if (data.type === 'context') {
+                            // Show RAG context
+                            document.getElementById('contextSection').style.display = 'block';
+                            const contextDiv = document.getElementById('context');
+                            contextDiv.innerHTML = data.chunks.map((chunk, i) => `
+                                <div class="context-item">
+                                    <strong>Passage ${i + 1}</strong> (${chunk.similarity}%) - ${chunk.author} - ${chunk.work}<br>
+                                    <small>${chunk.section}</small><br>
+                                    <div style="margin-top: 0.5rem; font-size: 0.9rem;">${chunk.text.substring(0, 200)}...</div>
+                                </div>
+                            `).join('');
+                        }
+                        else if (data.type === 'token') {
+                            // Stream tokens
+                            document.getElementById('responseSection').style.display = 'block';
+                            const responseDiv = document.getElementById('response');
+                            responseDiv.textContent += data.content;
+                        }
+                        else if (data.type === 'complete') {
+                            // Complete
+                            logDiv.innerHTML = `<span class="status status-complete">✓ Terminé</span>`;
+                            eventSource.close();
+                            document.getElementById('sendBtn').disabled = false;
+                        }
+                        else if (data.type === 'error') {
+                            // Error
+                            logDiv.innerHTML = `<span class="status status-error">✗ ${data.message}</span>`;
+                            eventSource.close();
+                            document.getElementById('sendBtn').disabled = false;
+                        }
+                    } catch (e) {
+                        console.error('Parse error:', e);
+                    }
+                };
+
+                eventSource.onerror = function(error) {
+                    console.error('SSE error:', error);
+                    logDiv.innerHTML = `<span class="status status-error">✗ Erreur de connexion SSE</span>`;
+                    eventSource.close();
+                    document.getElementById('sendBtn').disabled = false;
+                };
+
+            } catch (error) {
+                logDiv.innerHTML = `<span class="status status-error">✗ ${error.message}</span>`;
+                document.getElementById('sendBtn').disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

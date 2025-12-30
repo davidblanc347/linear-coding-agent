@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output files (large generated files)
+output/*/images/
+output/*/*.json
+output/*/*.md
+
+# Keep output folder structure
+!output/.gitkeep
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+temp_*.py
+cleanup_*.py
+
+# Type checking outputs
+mypy_errors.txt
+*_errors.txt
+
+# Test PDFs (keep input/ folder but ignore PDFs)
+input/*.pdf
+
+# Node artifacts (not a Node.js project)
+package-lock.json
+
+# Linear backup files
+.linear_project.json.backup
+
+# PRPs directory (project request proposals - temporary)
+PRPs/
+
+
+
+
+
+
+
+
+# Markdown working directory (conversion scripts + large source files)
+md/

@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+
+{% block title %}Traitement en cours{% endblock %}
+
+{% block content %}
+<style>
+    .progress-container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+    
+    .progress-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    
+    .progress-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: var(--color-accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+    }
+    
+    .progress-icon.error {
+        background: #c0392b;
+    }
+    
+    .progress-icon.success {
+        background: var(--color-accent-alt);
+    }
+    
+    .progress-title {
+        flex: 1;
+    }
+    
+    .progress-title h2 {
+        margin: 0;
+        font-size: 1.3rem;
+    }
+    
+    .progress-title .subtitle {
+        color: var(--color-text-muted);
+        font-size: 0.9rem;
+        margin-top: 0.25rem;
+    }
+    
+    /* Barre de progression globale */
+    .overall-progress {
+        margin-bottom: 2rem;
+    }
+    
+    .overall-progress-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+    }
+    
+    .progress-bar-container {
+        height: 8px;
+        background: rgba(125, 110, 88, 0.2);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    
+    .progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, var(--color-accent), var(--color-accent-alt));
+        border-radius: 4px;
+        transition: width 0.3s ease;
+        width: 0%;
+    }
+    
+    /* Liste des étapes */
+    .steps-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .step-item {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid rgba(125, 110, 88, 0.1);
+        opacity: 0.5;
+        transition: all 0.3s ease;
+    }
+    
+    .step-item.active {
+        opacity: 1;
+    }
+    
+    .step-item.completed {
+        opacity: 0.8;
+    }
+    
+    .step-item.error {
+        opacity: 1;
+        color: #c0392b;
+    }
+    
+    .step-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: rgba(125, 110, 88, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+    }
+    
+    .step-item.active .step-icon {
+        background: var(--color-accent);
+        color: var(--color-bg-main);
+    }
+    
+    .step-item.completed .step-icon {
+        background: var(--color-accent-alt);
+        color: var(--color-bg-main);
+    }
+    
+    .step-item.error .step-icon {
+        background: #c0392b;
+        color: white;
+    }
+    
+    .step-content {
+        flex: 1;
+    }
+    
+    .step-name {
+        font-weight: 500;
+        font-size: 0.95rem;
+    }
+    
+    .step-detail {
+        font-size: 0.8rem;
+        color: var(--color-text-muted);
+        margin-top: 0.2rem;
+    }
+    
+    .step-progress {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        min-width: 40px;
+        text-align: right;
+    }
+    
+    /* Spinner */
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(125, 110, 88, 0.3);
+        border-top-color: var(--color-accent);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    .step-item.active .spinner {
+        border-top-color: var(--color-bg-main);
+    }
+    
+    /* Message d'erreur */
+    .error-message {
+        background: rgba(192, 57, 43, 0.1);
+        border: 1px solid rgba(192, 57, 43, 0.3);
+        color: #c0392b;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-top: 1rem;
+        display: none;
+    }
+    
+    .error-message.visible {
+        display: block;
+    }
+    
+    /* Footer */
+    .progress-footer {
+        margin-top: 2rem;
+        text-align: center;
+    }
+    
+    .progress-footer .caption {
+        margin-bottom: 1rem;
+    }
+</style>
+
+<section class="section">
+    <div class="progress-container">
+        <div class="progress-header">
+            <div class="progress-icon" id="main-icon">
+                <div class="spinner"></div>
+            </div>
+            <div class="progress-title">
+                <h2 id="main-title">Traitement en cours...</h2>
+                <div class="subtitle" id="main-subtitle">{{ filename }}</div>
+            </div>
+        </div>
+        
+        <div class="overall-progress">
+            <div class="overall-progress-header">
+                <span>Progression globale</span>
+                <span id="progress-percent">0%</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+        </div>
+        
+        <ul class="steps-list" id="steps-list">
+            <li class="step-item" data-step="ocr">
+                <div class="step-icon">📄</div>
+                <div class="step-content">
+                    <div class="step-name">OCR Mistral</div>
+                    <div class="step-detail">Extraction du texte et des images</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+            <li class="step-item" data-step="markdown">
+                <div class="step-icon">📝</div>
+                <div class="step-content">
+                    <div class="step-name">Construction Markdown</div>
+                    <div class="step-detail">Génération du document structuré</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+            <li class="step-item" data-step="metadata">
+                <div class="step-icon">📖</div>
+                <div class="step-content">
+                    <div class="step-name">Extraction métadonnées</div>
+                    <div class="step-detail">Titre, auteur, éditeur via LLM</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+            <li class="step-item" data-step="toc">
+                <div class="step-icon">📑</div>
+                <div class="step-content">
+                    <div class="step-name">Table des matières</div>
+                    <div class="step-detail">Extraction de la structure via LLM</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+            <li class="step-item" data-step="classify">
+                <div class="step-icon">🏷️</div>
+                <div class="step-content">
+                    <div class="step-name">Classification sections</div>
+                    <div class="step-detail">Identification des types de contenu</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+            <li class="step-item" data-step="chunking">
+                <div class="step-icon">✂️</div>
+                <div class="step-content">
+                    <div class="step-name">Chunking sémantique</div>
+                    <div class="step-detail">Découpage intelligent du texte</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+            <li class="step-item" data-step="cleaning">
+                <div class="step-icon">🧹</div>
+                <div class="step-content">
+                    <div class="step-name">Nettoyage</div>
+                    <div class="step-detail">Correction des artefacts OCR</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+            <li class="step-item" data-step="validation">
+                <div class="step-icon">✓</div>
+                <div class="step-content">
+                    <div class="step-name">Validation</div>
+                    <div class="step-detail">Vérification de la qualité</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+            <li class="step-item" data-step="weaviate">
+                <div class="step-icon">🗄️</div>
+                <div class="step-content">
+                    <div class="step-name">Ingestion Weaviate</div>
+                    <div class="step-detail">Vectorisation et stockage</div>
+                </div>
+                <div class="step-progress">—</div>
+            </li>
+        </ul>
+        
+        <div class="error-message" id="error-message"></div>
+        
+        <div class="progress-footer">
+            <p class="caption" id="footer-message">Le traitement peut prendre quelques minutes selon la taille du document...</p>
+            <a href="/upload" class="btn" id="back-btn" style="display: none;">← Retour</a>
+        </div>
+    </div>
+</section>
+
+<script>
+const jobId = "{{ job_id }}";
+const steps = [
+    { id: "ocr", weight: 20 },
+    { id: "markdown", weight: 5 },
+    { id: "metadata", weight: 10 },
+    { id: "toc", weight: 15 },
+    { id: "classify", weight: 10 },
+    { id: "chunking", weight: 20 },
+    { id: "cleaning", weight: 10 },
+    { id: "validation", weight: 5 },
+    { id: "weaviate", weight: 5 }
+];
+
+let completedWeight = 0;
+let currentStepIndex = -1;
+
+function updateStep(stepId, status, detail = null) {
+    const stepItem = document.querySelector(`[data-step="${stepId}"]`);
+    if (!stepItem) return;
+    
+    const stepIndex = steps.findIndex(s => s.id === stepId);
+    
+    // Marquer les étapes précédentes comme complétées
+    steps.forEach((s, i) => {
+        if (i < stepIndex) {
+            const item = document.querySelector(`[data-step="${s.id}"]`);
+            if (item && !item.classList.contains('completed') && !item.classList.contains('error')) {
+                item.classList.remove('active');
+                item.classList.add('completed');
+                item.querySelector('.step-icon').innerHTML = '✓';
+                item.querySelector('.step-progress').textContent = '100%';
+            }
+        }
+    });
+    
+    // Mettre à jour l'étape actuelle
+    stepItem.classList.remove('active', 'completed', 'error');
+    
+    if (status === 'active') {
+        stepItem.classList.add('active');
+        stepItem.querySelector('.step-icon').innerHTML = '<div class="spinner"></div>';
+        stepItem.querySelector('.step-progress').textContent = '...';
+        currentStepIndex = stepIndex;
+    } else if (status === 'completed') {
+        stepItem.classList.add('completed');
+        stepItem.querySelector('.step-icon').innerHTML = '✓';
+        stepItem.querySelector('.step-progress').textContent = '100%';
+        completedWeight += steps[stepIndex].weight;
+    } else if (status === 'error') {
+        stepItem.classList.add('error');
+        stepItem.querySelector('.step-icon').innerHTML = '✗';
+        stepItem.querySelector('.step-progress').textContent = '—';
+    } else if (status === 'skipped') {
+        stepItem.classList.add('completed');
+        stepItem.querySelector('.step-icon').innerHTML = '⚡';
+        stepItem.querySelector('.step-progress').textContent = 'skip';
+        stepItem.querySelector('.step-detail').textContent = 'Réutilisation du cache';
+        completedWeight += steps[stepIndex].weight;
+    }
+    
+    if (detail) {
+        stepItem.querySelector('.step-detail').textContent = detail;
+    }
+    
+    // Mettre à jour la barre de progression
+    updateProgressBar();
+}
+
+function updateProgressBar() {
+    const totalWeight = steps.reduce((sum, s) => sum + s.weight, 0);
+    const percent = Math.round((completedWeight / totalWeight) * 100);
+    document.getElementById('progress-bar').style.width = percent + '%';
+    document.getElementById('progress-percent').textContent = percent + '%';
+}
+
+function showError(message) {
+    document.getElementById('main-icon').classList.add('error');
+    document.getElementById('main-icon').innerHTML = '✗';
+    document.getElementById('main-title').textContent = 'Erreur de traitement';
+    document.getElementById('error-message').textContent = message;
+    document.getElementById('error-message').classList.add('visible');
+    document.getElementById('footer-message').style.display = 'none';
+    document.getElementById('back-btn').style.display = 'inline-block';
+}
+
+function showSuccess(redirectUrl) {
+    document.getElementById('main-icon').classList.add('success');
+    document.getElementById('main-icon').innerHTML = '✓';
+    document.getElementById('main-title').textContent = 'Traitement terminé !';
+    document.getElementById('progress-bar').style.width = '100%';
+    document.getElementById('progress-percent').textContent = '100%';
+    document.getElementById('footer-message').textContent = 'Redirection vers les résultats...';
+    
+    setTimeout(() => {
+        window.location.href = redirectUrl;
+    }, 1000);
+}
+
+// Connexion SSE pour recevoir les mises à jour
+const eventSource = new EventSource('/upload/progress/' + jobId);
+
+eventSource.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    
+    if (data.type === 'step') {
+        updateStep(data.step, data.status, data.detail);
+    } else if (data.type === 'error') {
+        showError(data.message);
+        eventSource.close();
+    } else if (data.type === 'complete') {
+        showSuccess(data.redirect);
+        eventSource.close();
+    }
+};
+
+eventSource.onerror = function() {
+    // Vérifier si le traitement est terminé
+    fetch('/upload/status/' + jobId)
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'complete') {
+                showSuccess(data.redirect);
+            } else if (data.status === 'error') {
+                showError(data.message);
+            }
+        })
+        .catch(() => {
+            showError('Connexion perdue avec le serveur');
+        });
+    eventSource.close();
+};
+</script>
+{% endblock %}
+
+

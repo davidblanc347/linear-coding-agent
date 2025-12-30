@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Documents{% endblock %}
+
+{% block content %}
+<!-- Messages flash -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div style="max-width: 900px; margin: 0 auto 2rem auto;">
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}" style="
+          padding: 1rem 1.5rem;
+          border-radius: 8px;
+          margin-bottom: 1rem;
+          border-left: 4px solid;
+          {% if category == 'success' %}
+            background-color: rgba(85, 107, 99, 0.1);
+            border-color: var(--color-accent-alt);
+            color: var(--color-accent-alt);
+          {% elif category == 'warning' %}
+            background-color: rgba(218, 188, 134, 0.15);
+            border-color: #dabc86;
+            color: #a89159;
+          {% elif category == 'error' %}
+            background-color: rgba(160, 82, 82, 0.1);
+            border-color: #a05252;
+            color: #a05252;
+          {% else %}
+            background-color: rgba(125, 110, 88, 0.1);
+            border-color: var(--color-accent);
+            color: var(--color-text-main);
+          {% endif %}
+        ">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<section class="section">
+    <h1>📚 Documents traités</h1>
+    <p class="lead">Liste des documents analysés par le parser PDF</p>
+
+    {% if documents %}
+        <div class="stats-grid mb-4">
+            <div class="stat-box">
+                <div class="stat-number">{{ documents|length }}</div>
+                <div class="stat-label">Documents</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{{ documents|sum(attribute='summaries_count') }}</div>
+                <div class="stat-label">Résumés totaux</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{{ documents|sum(attribute='chunks_count') }}</div>
+                <div class="stat-label">Chunks totaux</div>
+            </div>
+        </div>
+
+        {% for doc in documents %}
+        <div class="passage-card">
+            <div class="passage-header">
+                <div>
+                    <span class="badge badge-author">{{ doc.name }}</span>
+                    {% if doc.has_structured %}
+                    <span class="badge badge-similarity">LLM</span>
+                    {% endif %}
+                </div>
+                <div>
+                    {% if doc.summaries_count %}
+                    <span class="badge">{{ doc.summaries_count }} résumés</span>
+                    {% endif %}
+                    {% if doc.authors_count %}
+                    <span class="badge">{{ doc.authors_count }} auteur{{ 's' if doc.authors_count > 1 else '' }}</span>
+                    {% endif %}
+                    {% if doc.chunks_count %}
+                    <span class="badge">{{ doc.chunks_count }} chunks</span>
+                    {% endif %}
+                    {% if doc.has_images %}
+                    <span class="badge">{{ doc.image_count }} images</span>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Métadonnées -->
+            {% if doc.title or doc.author %}
+            <div class="mt-2 mb-2">
+                {% if doc.title %}
+                <div><strong>Titre :</strong> {{ doc.title }}</div>
+                {% endif %}
+                {% if doc.author %}
+                <div><strong>Auteur :</strong> {{ doc.author }}</div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Table des matières (aperçu) -->
+            {% if doc.toc and doc.toc|length > 0 %}
+            <div class="mt-2 mb-2" style="background: var(--color-bg-secondary); padding: 0.75rem 1rem; border-radius: 8px;">
+                <strong style="font-size: 0.85rem; color: var(--color-accent-alt);">Table des matières :</strong>
+                <ul style="list-style: none; padding-left: 0; margin: 0.5rem 0 0 0; font-size: 0.9rem;">
+                    {% for item in doc.toc[:5] %}
+                    <li style="padding: 0.2rem 0; padding-left: {{ (item.level - 1) * 1 }}rem;">
+                        {% if item.level == 1 %}
+                        <strong>{{ item.title }}</strong>
+                        {% else %}
+                        <span style="color: var(--color-accent-alt);">{{ item.title }}</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                    {% if doc.toc|length > 5 %}
+                    <li style="padding: 0.2rem 0; color: var(--color-accent); font-style: italic;">
+                        ... et {{ doc.toc|length - 5 }} autres sections
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            <!-- Boutons d'accès aux fichiers -->
+            <div class="mt-2">
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <a href="/documents/{{ doc.name }}/view" class="btn btn-sm btn-primary">
+                        👁️ Voir détails
+                    </a>
+                    {% if doc.has_markdown %}
+                    <a href="/output/{{ doc.name }}/{{ doc.name }}.md" target="_blank" class="btn btn-sm">
+                        📄 Markdown
+                    </a>
+                    {% endif %}
+                    {% if doc.has_chunks %}
+                    <a href="/output/{{ doc.name }}/{{ doc.name }}_chunks.json" target="_blank" class="btn btn-sm">
+                        📊 Chunks
+                    </a>
+                    {% endif %}
+                    {% if doc.has_structured %}
+                    <a href="/output/{{ doc.name }}/{{ doc.name }}_structured.json" target="_blank" class="btn btn-sm">
+                        🧠 Structure LLM
+                    </a>
+                    {% endif %}
+                    <a href="/output/{{ doc.name }}/{{ doc.name }}_ocr.json" target="_blank" class="btn btn-sm">
+                        🔍 OCR brut
+                    </a>
+                </div>
+            </div>
+            
+            <div class="passage-meta mt-2" style="display: flex; justify-content: space-between; align-items: center;">
+                <span><strong>Dossier :</strong> output/{{ doc.name }}/</span>
+                <form action="/documents/delete/{{ doc.name }}" method="post" style="margin: 0;" onsubmit="return confirm('⚠️ Supprimer le document « {{ doc.name }} » ?\n\n• Fichiers locaux (markdown, chunks, images)\n• Chunks dans Weaviate ({{ doc.chunks_count or 0 }} passages)\n\n⚠️ Cette action est IRRÉVERSIBLE.');">
+                    <button type="submit" class="btn btn-sm" style="color: #a05252; border-color: #a05252; padding: 0.3rem 0.6rem;" title="Supprimer ce document et ses données Weaviate">
+                        🗑️ Supprimer
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <h3>Aucun document traité</h3>
+            <p class="text-muted">Uploadez un PDF pour commencer.</p>
+        </div>
+    {% endif %}
+
+    <div class="text-center mt-4">
+        <a href="/upload" class="btn btn-primary">Analyser un PDF</a>
+    </div>
+</section>
+{% endblock %}

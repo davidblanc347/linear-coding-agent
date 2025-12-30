@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Passages{% endblock %}
+
+{% block content %}
+<section class="section">
+    <h1>📚 Parcourir les passages</h1>
+    <p class="lead">Explorez tous les passages indexés dans la base de données</p>
+
+    <!-- Filters -->
+    <div class="search-box">
+        <form method="get" action="/passages">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="author">Auteur</label>
+                    <select name="author" id="author" class="form-control">
+                        <option value="">Tous les auteurs</option>
+                        {% if stats and stats.author_list %}
+                            {% for author in stats.author_list %}
+                                <option value="{{ author }}" {{ 'selected' if author_filter == author else '' }}>{{ author }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="work">Œuvre</label>
+                    <select name="work" id="work" class="form-control">
+                        <option value="">Toutes les œuvres</option>
+                        {% if stats and stats.work_list %}
+                            {% for work in stats.work_list %}
+                                <option value="{{ work }}" {{ 'selected' if work_filter == work else '' }}>{{ work }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="per_page">Par page</label>
+                    <select name="per_page" id="per_page" class="form-control">
+                        <option value="10" {{ 'selected' if per_page == 10 else '' }}>10</option>
+                        <option value="20" {{ 'selected' if per_page == 20 else '' }}>20</option>
+                        <option value="50" {{ 'selected' if per_page == 50 else '' }}>50</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-2">
+                <button type="submit" class="btn btn-primary">Filtrer</button>
+                <a href="/passages" class="btn" style="margin-left: 0.5rem;">Réinitialiser</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Active filters -->
+    {% if author_filter or work_filter %}
+        <div class="mb-3">
+            <span class="text-muted">Filtres actifs :</span>
+            {% if author_filter %}
+                <span class="badge badge-author">{{ author_filter }}</span>
+            {% endif %}
+            {% if work_filter %}
+                <span class="badge badge-work">{{ work_filter }}</span>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <!-- Chunks list -->
+    {% if chunks %}
+        {% for chunk in chunks %}
+            <div class="passage-card">
+                <div class="passage-header">
+                    <div>
+                        <span class="badge badge-work">{{ chunk.work.title if chunk.work else '?' }} {{ chunk.sectionPath or '' }}</span>
+                        <span class="badge badge-author">{{ chunk.work.author if chunk.work else 'Anonyme' }}</span>
+                    </div>
+                </div>
+                <div class="passage-text">"{{ chunk.text }}"</div>
+                <div class="passage-meta">
+                    <strong>Type :</strong> {{ chunk.unitType or '—' }} &nbsp;│&nbsp;
+                    <strong>Langue :</strong> {{ (chunk.language or '—') | upper }} &nbsp;│&nbsp;
+                    <strong>Index :</strong> {{ chunk.orderIndex or '—' }}
+                </div>
+                {% if chunk.keywords %}
+                    <div class="mt-2">
+                        {% for kw in chunk.keywords %}
+                            <span class="keyword-tag">{{ kw }}</span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+
+        <!-- Pagination -->
+        <div class="pagination">
+            {% if page > 1 %}
+                <a href="/passages?page={{ page - 1 }}&per_page={{ per_page }}{% if author_filter %}&author={{ author_filter | urlencode }}{% endif %}{% if work_filter %}&work={{ work_filter | urlencode }}{% endif %}" class="btn btn-sm">← Précédent</a>
+            {% else %}
+                <span class="btn btn-sm" style="opacity: 0.4; cursor: not-allowed;">← Précédent</span>
+            {% endif %}
+            
+            <span class="pagination-info">Page {{ page }}</span>
+            
+            {% if passages | length >= per_page %}
+                <a href="/passages?page={{ page + 1 }}&per_page={{ per_page }}{% if author_filter %}&author={{ author_filter | urlencode }}{% endif %}{% if work_filter %}&work={{ work_filter | urlencode }}{% endif %}" class="btn btn-sm">Suivant →</a>
+            {% else %}
+                <span class="btn btn-sm" style="opacity: 0.4; cursor: not-allowed;">Suivant →</span>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <h3>Aucun passage trouvé</h3>
+            <p class="text-muted">Essayez de modifier vos filtres ou <a href="/passages">réinitialisez</a>.</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+

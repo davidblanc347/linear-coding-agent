@@ -63,7 +63,17 @@
       "Bash(docker info:*)",
       "Bash(docker stats:*)",
       "Bash(timeout:*)",
-      "Bash(docker inspect:*)"
+      "Bash(docker inspect:*)",
+      "Bash(mypy:*)",
+      "Bash(wc:*)",
+      "Bash(exit 0)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker run:*)",
+      "Bash(docker compose:*)",
+      "Bash(cleanup_unused_files.bat)",
+      "Bash(cmd /c cleanup_unused_files.bat)",
+      "Bash(pytest:*)"
     ]
   }
 }

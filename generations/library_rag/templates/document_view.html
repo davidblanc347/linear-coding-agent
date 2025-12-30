@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+
+{% block title %}{{ result.document_name }} - Détails{% endblock %}
+
+{% block content %}
+{# Dictionnaire de traduction des types de chunks #}
+{% set chunk_types = {
+    'main_content': {'label': 'Contenu principal', 'icon': '📄', 'desc': 'Paragraphe de contenu substantiel', 'color': 'rgba(125, 110, 88, 0.15)'},
+    'exposition': {'label': 'Exposition', 'icon': '📖', 'desc': 'Présentation d\'idées ou de contexte', 'color': 'rgba(85, 107, 99, 0.15)'},
+    'argument': {'label': 'Argument', 'icon': '💭', 'desc': 'Raisonnement ou argumentation', 'color': 'rgba(164, 132, 92, 0.15)'},
+    'définition': {'label': 'Définition', 'icon': '📌', 'desc': 'Définition de concept ou terme', 'color': 'rgba(125, 110, 88, 0.2)'},
+    'example': {'label': 'Exemple', 'icon': '💡', 'desc': 'Illustration ou cas pratique', 'color': 'rgba(218, 188, 134, 0.2)'},
+    'citation': {'label': 'Citation', 'icon': '💬', 'desc': 'Citation d\'auteur ou référence', 'color': 'rgba(85, 107, 99, 0.2)'},
+    'abstract': {'label': 'Résumé', 'icon': '📋', 'desc': 'Résumé ou synthèse', 'color': 'rgba(164, 132, 92, 0.2)'},
+    'preface': {'label': 'Préface', 'icon': '✍️', 'desc': 'Préface, avant-propos ou avertissement', 'color': 'rgba(85, 107, 99, 0.15)'},
+    'conclusion': {'label': 'Conclusion', 'icon': '🎯', 'desc': 'Conclusion d\'une argumentation', 'color': 'rgba(125, 110, 88, 0.2)'}
+} %}
+
+<style>
+    /* TOC hiérarchique */
+    .toc-tree {
+        list-style: none;
+        padding-left: 0;
+        margin: 0;
+    }
+    .toc-tree ul {
+        list-style: none;
+        padding-left: 1.5rem;
+        margin: 0;
+        display: none;
+    }
+    .toc-tree ul.expanded {
+        display: block;
+    }
+    .toc-item {
+        padding: 0.4rem 0;
+        border-bottom: 1px solid rgba(125, 110, 88, 0.1);
+    }
+    .toc-item-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+    }
+    .toc-toggle {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--color-accent);
+        font-size: 0.8rem;
+        transition: transform 0.2s;
+    }
+    .toc-toggle.expanded {
+        transform: rotate(90deg);
+    }
+    .toc-toggle.no-children {
+        visibility: hidden;
+    }
+    .toc-level-1 { font-weight: bold; color: var(--color-text-main); }
+    .toc-level-2 { color: var(--color-accent-alt); padding-left: 0.5rem; }
+    .toc-level-3 { color: var(--color-text-muted); font-size: 0.9rem; padding-left: 0.5rem; }
+    .toc-level-4 { color: var(--color-text-muted); font-size: 0.85rem; font-style: italic; padding-left: 0.5rem; }
+
+    /* Passages dépliables */
+    .passage-card {
+        background: var(--color-bg-secondary);
+        border-radius: 8px;
+        margin-bottom: 0.75rem;
+        border-left: 3px solid var(--color-accent);
+        overflow: hidden;
+    }
+    .passage-header {
+        padding: 1rem;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        transition: background-color 0.2s;
+    }
+    .passage-header:hover {
+        background-color: rgba(125, 110, 88, 0.05);
+    }
+    .passage-toggle {
+        color: var(--color-accent);
+        font-size: 1.2rem;
+        transition: transform 0.2s;
+    }
+    .passage-toggle.expanded {
+        transform: rotate(180deg);
+    }
+    .passage-content {
+        display: none;
+        padding: 0 1rem 1rem 1rem;
+        border-top: 1px solid rgba(125, 110, 88, 0.1);
+    }
+    .passage-content.expanded {
+        display: block;
+    }
+    .passage-text {
+        font-style: italic;
+        color: var(--color-text-main);
+        font-size: 0.9rem;
+        line-height: 1.6;
+        background: var(--color-bg-main);
+        padding: 1rem;
+        border-radius: 6px;
+        margin-top: 0.75rem;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    .passage-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+    }
+    .passage-meta-item {
+        display: flex;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+    }
+    .passage-meta-label {
+        color: var(--color-text-muted);
+        min-width: 80px;
+    }
+    .concepts-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+        margin-top: 0.5rem;
+    }
+    .concept-tag {
+        background: var(--color-accent);
+        color: var(--color-bg-main);
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+    }
+    
+    /* Expand/Collapse all */
+    .toolbar {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .toolbar button {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.8rem;
+        background: var(--color-bg-secondary);
+        border: 1px solid rgba(125, 110, 88, 0.3);
+        border-radius: 4px;
+        cursor: pointer;
+        color: var(--color-text-main);
+    }
+    .toolbar button:hover {
+        background: var(--color-accent);
+        color: var(--color-bg-main);
+    }
+</style>
+
+<section class="section">
+    <h1>📄 {{ result.document_name }}</h1>
+    <p class="lead">Détails du document traité</p>
+
+    <div class="ornament">· · ·</div>
+
+    <!-- Statistiques -->
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-number">{{ result.pages or 0 }}</div>
+            <div class="stat-label">Pages</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">{{ result.chunks_count or 0 }}</div>
+            <div class="stat-label">Chunks</div>
+        </div>
+        {% if result.weaviate_ingest and result.weaviate_ingest.success %}
+        <div class="stat-box">
+            <div class="stat-number">{{ result.weaviate_ingest.count }}</div>
+            <div class="stat-label">Dans Weaviate</div>
+        </div>
+        {% endif %}
+        {% if result.toc %}
+        <div class="stat-box">
+            <div class="stat-number">{{ result.flat_toc|length if result.flat_toc else result.toc|length }}</div>
+            <div class="stat-label">Entrées TOC</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <hr class="divider">
+
+    <!-- Métadonnées du document -->
+    <div class="card">
+        <h3>📖 Informations du document</h3>
+        <div class="mt-2">
+            <table style="width: 100%; border-collapse: collapse;">
+                {% if result.metadata.title %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0; width: 150px;"><strong>Titre</strong></td>
+                    <td style="padding: 0.75rem 0;">{{ result.metadata.title }}</td>
+                </tr>
+                {% endif %}
+                {% if result.metadata.author %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Auteur</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <span class="badge badge-author">{{ result.metadata.author }}</span>
+                    </td>
+                </tr>
+                {% endif %}
+                {% if result.metadata.publisher %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Éditeur</strong></td>
+                    <td style="padding: 0.75rem 0;">{{ result.metadata.publisher }}</td>
+                </tr>
+                {% endif %}
+                {% if result.metadata.year %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Année</strong></td>
+                    <td style="padding: 0.75rem 0;">{{ result.metadata.year }}</td>
+                </tr>
+                {% endif %}
+                {% if result.metadata.doi %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>DOI</strong></td>
+                    <td style="padding: 0.75rem 0;"><code>{{ result.metadata.doi }}</code></td>
+                </tr>
+                {% endif %}
+                {% if result.metadata.isbn %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>ISBN</strong></td>
+                    <td style="padding: 0.75rem 0;"><code>{{ result.metadata.isbn }}</code></td>
+                </tr>
+                {% endif %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Pages</strong></td>
+                    <td style="padding: 0.75rem 0;">{{ result.pages or 0 }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 0.75rem 0;"><strong>Chunks</strong></td>
+                    <td style="padding: 0.75rem 0;">{{ result.chunks_count or 0 }} segments de texte</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Table des matières hiérarchique -->
+    {% if result.toc and result.toc|length > 0 %}
+    <div class="card mt-3">
+        <h3>📑 Table des matières ({{ result.flat_toc|length if result.flat_toc else '?' }} entrées)</h3>
+        
+        <div class="toolbar">
+            <button onclick="expandAllToc()">▼ Tout déplier</button>
+            <button onclick="collapseAllToc()">▲ Tout replier</button>
+        </div>
+        
+        <div class="mt-2">
+            <ul class="toc-tree" id="toc-tree">
+                {% macro render_toc(items) %}
+                    {% for item in items %}
+                    <li class="toc-item">
+                        <div class="toc-item-header" onclick="toggleTocItem(this)">
+                            <span class="toc-toggle {% if not item.children or item.children|length == 0 %}no-children{% endif %}">▶</span>
+                            <span class="toc-level-{{ item.level }}">{{ item.title }}</span>
+                        </div>
+                        {% if item.children and item.children|length > 0 %}
+                        <ul>
+                            {{ render_toc(item.children) }}
+                        </ul>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                {% endmacro %}
+                {{ render_toc(result.toc) }}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    <hr class="divider">
+
+    <!-- Fichiers générés -->
+    <div class="card">
+        <h3>📁 Fichiers générés</h3>
+        <div class="mt-2">
+            <table style="width: 100%; border-collapse: collapse;">
+                {% if result.files.markdown %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Markdown</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}.md" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                {% endif %}
+                {% if result.files.chunks %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Chunks JSON</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}_chunks.json" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                {% endif %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>OCR brut</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}_ocr.json" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                {% if result.files.weaviate %}
+                <tr>
+                    <td style="padding: 0.75rem 0;"><strong>Weaviate JSON</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}_weaviate.json" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <!-- Tous les passages avec métadonnées -->
+    {% if result.chunks and result.chunks|length > 0 %}
+    <div class="card mt-3">
+        <h3>📝 Passages ({{ result.chunks|length }})</h3>
+        
+        <div class="toolbar">
+            <button onclick="expandAllPassages()">▼ Tout déplier</button>
+            <button onclick="collapseAllPassages()">▲ Tout replier</button>
+        </div>
+        
+        <div class="mt-2" id="passages-container">
+            {% for chunk in result.chunks %}
+            {% set level = chunk.section_level or chunk.sectionLevel or 1 %}
+            <div class="passage-card" data-index="{{ loop.index0 }}" style="{% if level > 1 %}margin-left: {{ (level - 1) * 1 }}rem; border-left: 3px solid {% if level == 2 %}var(--color-accent-alt){% else %}rgba(125, 110, 88, 0.3){% endif %};{% endif %}">
+                <div class="passage-header" onclick="togglePassage(this)">
+                    <div style="flex: 1;">
+                        <!-- Hiérarchie visuelle -->
+                        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                            {% if chunk.chapter_title and chunk.chapter_title != chunk.section and level > 1 %}
+                            <span style="font-size: 0.75rem; color: var(--color-text-muted);">{{ chunk.chapter_title }} ›</span>
+                            {% endif %}
+                            {% if chunk.subsection_title and chunk.subsection_title != chunk.chapter_title and chunk.subsection_title != chunk.section %}
+                            <span style="font-size: 0.75rem; color: var(--color-accent-alt);">{{ chunk.subsection_title }} ›</span>
+                            {% endif %}
+                            {% if chunk.paragraph_number %}
+                            <span class="badge" style="background-color: var(--color-accent); color: white; font-weight: bold;">
+                                § {{ chunk.paragraph_number }}
+                            </span>
+                            {% endif %}
+                            <span class="badge badge-work" style="{% if level == 1 %}background-color: var(--color-accent); color: white;{% endif %}">
+                                {% if level == 1 %}📚{% elif level == 2 %}📖{% else %}📄{% endif %}
+                                {{ chunk.section or 'Sans section' }}
+                            </span>
+                            {% if chunk.type %}
+                                {% set type_info = chunk_types.get(chunk.type, {'label': chunk.type, 'icon': '📝', 'desc': 'Type de contenu', 'color': 'rgba(125, 110, 88, 0.15)'}) %}
+                                <span class="type-badge" style="background: {{ type_info.color }};" title="{{ type_info.desc }}">
+                                    {{ type_info.icon }} {{ type_info.label }}
+                                </span>
+                            {% endif %}
+                        </div>
+                        {% if chunk.summary %}
+                        <div style="margin-top: 0.3rem; font-size: 0.85rem; color: var(--color-text-muted);">
+                            {{ chunk.summary[:100] }}{% if chunk.summary|length > 100 %}...{% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="caption">{{ chunk.chunk_id or 'chunk_' ~ loop.index0 }}</span>
+                        <span class="passage-toggle">▼</span>
+                    </div>
+                </div>
+                <div class="passage-content">
+                    {% set level = chunk.section_level or chunk.sectionLevel or 1 %}
+                    
+                    <!-- Métadonnées simplifiées -->
+                    <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid rgba(125, 110, 88, 0.1);">
+                        <!-- Hiérarchie -->
+                        {% if chunk.chapter_title and chunk.chapter_title != chunk.section %}
+                        <span style="font-size: 0.85rem; color: var(--color-text-muted);">
+                            📚 {{ chunk.chapter_title }}
+                        </span>
+                        <span style="color: var(--color-text-muted);">›</span>
+                        {% endif %}
+                        
+                        {% if chunk.section %}
+                        <span style="font-size: 0.85rem; {% if level == 1 %}font-weight: 600; color: var(--color-accent);{% else %}color: var(--color-accent-alt);{% endif %}">
+                            {% if level == 1 %}📖{% elif level == 2 %}📄{% else %}📃{% endif %} {{ chunk.section }}
+                        </span>
+                        {% endif %}
+                        
+                        <!-- Type -->
+                        {% if chunk.type %}
+                        {% set type_info = chunk_types.get(chunk.type, {'label': chunk.type, 'icon': '📝', 'desc': 'Type de contenu', 'color': 'rgba(125, 110, 88, 0.15)'}) %}
+                        <span style="font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: {{ type_info.color }};" title="{{ type_info.desc }}">
+                            {{ type_info.icon }} {{ type_info.label }}
+                        </span>
+                        {% endif %}
+                        
+                        <!-- Niveau -->
+                        <span style="font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; 
+                            {% if level == 1 %}background-color: var(--color-accent); color: white;
+                            {% elif level == 2 %}background-color: var(--color-accent-alt); color: white;
+                            {% else %}background-color: rgba(125, 110, 88, 0.2);{% endif %}">
+                            Niv. {{ level }}
+                        </span>
+                        
+                        <!-- Paragraphe -->
+                        {% if chunk.paragraph_number %}
+                        <span style="font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; background-color: var(--color-accent); color: white;">
+                            § {{ chunk.paragraph_number }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Concepts si présents -->
+                    {% if chunk.concepts and chunk.concepts|length > 0 %}
+                    <div style="padding: 0.5rem 0;">
+                        <div class="concepts-list">
+                            {% for concept in chunk.concepts %}
+                            <span class="concept-tag">{{ concept }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Texte complet -->
+                    <div class="passage-text">
+                        {{ chunk.text }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Données Weaviate -->
+    {% if result.weaviate_ingest %}
+    <div class="card mt-3">
+        <h3>🗄️ Ingestion Weaviate</h3>
+        <div class="mt-2">
+            {% if result.weaviate_ingest.success %}
+                <div class="alert alert-success" style="background-color: rgba(85, 107, 99, 0.1); border: 1px solid rgba(85, 107, 99, 0.3); color: var(--color-accent-alt); padding: 1rem; border-radius: 8px;">
+                    <strong>✓ Ingestion réussie :</strong> {{ result.weaviate_ingest.count }} passages insérés dans la collection <code>Passage</code>
+                </div>
+            {% else %}
+                <div class="alert alert-warning" style="background-color: rgba(125, 110, 88, 0.1); border: 1px solid rgba(125, 110, 88, 0.3); color: var(--color-accent); padding: 1rem; border-radius: 8px;">
+                    <strong>⚠️ Erreur d'ingestion :</strong> {{ result.weaviate_ingest.error }}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Images extraites -->
+    {% if result.files.images %}
+    <div class="card mt-3">
+        <h3>🖼️ Images extraites ({{ result.files.images|length }})</h3>
+        <div class="mt-2" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem;">
+            {% for img in result.files.images[:12] %}
+            <div style="text-align: center;">
+                <a href="/output/{{ result.document_name }}/images/{{ img.split('/')[-1].split('\\')[-1] }}" target="_blank">
+                    <img 
+                        src="/output/{{ result.document_name }}/images/{{ img.split('/')[-1].split('\\')[-1] }}" 
+                        alt="Image" 
+                        style="max-width: 100%; max-height: 120px; border-radius: 8px; border: 1px solid rgba(125, 110, 88, 0.2);"
+                    >
+                </a>
+                <div class="caption">{{ img.split('/')[-1].split('\\')[-1] }}</div>
+            </div>
+            {% endfor %}
+            {% if result.files.images|length > 12 %}
+            <div style="display: flex; align-items: center; justify-content: center;">
+                <span class="text-muted">+ {{ result.files.images|length - 12 }} autres</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="text-center mt-4">
+        <a href="/documents" class="btn btn-primary">← Retour aux documents</a>
+        <a href="/upload" class="btn" style="margin-left: 0.5rem;">Analyser un autre PDF</a>
+    </div>
+</section>
+
+<script>
+// TOC toggle
+function toggleTocItem(header) {
+    const item = header.parentElement;
+    const toggle = header.querySelector('.toc-toggle');
+    const children = item.querySelector('ul');
+    
+    if (children) {
+        children.classList.toggle('expanded');
+        toggle.classList.toggle('expanded');
+    }
+}
+
+function expandAllToc() {
+    document.querySelectorAll('.toc-tree ul').forEach(ul => ul.classList.add('expanded'));
+    document.querySelectorAll('.toc-toggle').forEach(t => t.classList.add('expanded'));
+}
+
+function collapseAllToc() {
+    document.querySelectorAll('.toc-tree ul').forEach(ul => ul.classList.remove('expanded'));
+    document.querySelectorAll('.toc-toggle').forEach(t => t.classList.remove('expanded'));
+}
+
+// Passages toggle
+function togglePassage(header) {
+    const card = header.parentElement;
+    const content = card.querySelector('.passage-content');
+    const toggle = header.querySelector('.passage-toggle');
+    
+    content.classList.toggle('expanded');
+    toggle.classList.toggle('expanded');
+}
+
+function expandAllPassages() {
+    document.querySelectorAll('.passage-content').forEach(c => c.classList.add('expanded'));
+    document.querySelectorAll('.passage-toggle').forEach(t => t.classList.add('expanded'));
+}
+
+function collapseAllPassages() {
+    document.querySelectorAll('.passage-content').forEach(c => c.classList.remove('expanded'));
+    document.querySelectorAll('.passage-toggle').forEach(t => t.classList.remove('expanded'));
+}
+</script>
+{% endblock %}

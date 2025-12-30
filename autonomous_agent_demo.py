@@ -118,7 +118,12 @@ def main() -> None:
 
     # Automatically place projects in generations/ directory unless already specified
     project_dir = args.project_dir
-    if not str(project_dir).startswith("generations/"):
+
+    # Normalize path to handle ./generations/, .\generations\, etc.
+    normalized_parts = Path(project_dir).parts
+    has_generations = "generations" in normalized_parts
+
+    if not has_generations:
         # Convert relative paths to be under generations/
         if project_dir.is_absolute():
             # If absolute path, use as-is
@@ -126,6 +131,9 @@ def main() -> None:
         else:
             # Prepend generations/ to relative paths
             project_dir = Path("generations") / project_dir
+    else:
+        # "generations" already in path, normalize and use as-is
+        project_dir = Path(*[p for p in normalized_parts if p != "."])
 
     # Run the agent
     try:

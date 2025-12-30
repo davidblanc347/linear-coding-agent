@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Accueil{% endblock %}
+
+{% block content %}
+<section class="section">
+    <h1 class="text-center">Bienvenue sur Philosophia</h1>
+    <p class="lead text-center">Explorez les textes philosophiques indexés dans Weaviate</p>
+    
+    <div class="ornament">· · ·</div>
+
+    {% if stats %}
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-number">{{ stats.passages }}</div>
+                <div class="stat-label">Passages</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{{ stats.works }}</div>
+                <div class="stat-label">Œuvres</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{{ stats.authors }}</div>
+                <div class="stat-label">Auteurs</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{{ stats.languages }}</div>
+                <div class="stat-label">Langues</div>
+            </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="form-row">
+            <!-- Works -->
+            <div class="card">
+                <h3>📖 Œuvres disponibles</h3>
+                {% if stats.work_list %}
+                    <ul class="mt-2" style="list-style: none;">
+                        {% for work in stats.work_list %}
+                            <li style="padding: 0.3rem 0;">
+                                <a href="/passages?work={{ work | urlencode }}">{{ work }}</a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted">Aucune œuvre trouvée</p>
+                {% endif %}
+            </div>
+
+            <!-- Authors -->
+            <div class="card">
+                <h3>✍️ Auteurs</h3>
+                {% if stats.author_list %}
+                    <ul class="mt-2" style="list-style: none;">
+                        {% for author in stats.author_list %}
+                            <li style="padding: 0.3rem 0;">
+                                <a href="/passages?author={{ author | urlencode }}">{{ author }}</a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted">Aucun auteur trouvé</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- How to use -->
+        <div class="card">
+            <h3>💡 Comment utiliser Philosophia ?</h3>
+            <div class="mt-2">
+                <p><strong>1. Parcourir les passages</strong> — Consultez tous les passages indexés avec filtres par auteur ou œuvre</p>
+                <p><strong>2. Recherche sémantique</strong> — Posez une question en langage naturel pour trouver des passages pertinents</p>
+                <p class="mb-1">Exemples de recherches :</p>
+                <ul class="list-inline">
+                    <li><span class="badge">Qu'est-ce que la vertu ?</span></li>
+                    <li><span class="badge">La mort est-elle à craindre ?</span></li>
+                    <li><span class="badge">Comment vivre une vie juste ?</span></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <a href="/search" class="btn btn-primary">Commencer une recherche</a>
+            <a href="/passages" class="btn" style="margin-left: 0.5rem;">Parcourir les passages</a>
+        </div>
+
+    {% else %}
+        <div class="alert alert-warning">
+            <strong>⚠️ Base de données non disponible</strong><br>
+            Assurez-vous que Weaviate est démarré et que les données sont chargées.
+        </div>
+        <div class="card">
+            <h3>Pour démarrer :</h3>
+            <pre style="background: var(--color-bg-secondary); padding: 1rem; border-radius: 8px; margin-top: 1rem; overflow-x: auto;">docker-compose up -d
+python schema.py
+python ingest_test.py</pre>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+

@@ -1,0 +1,42 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Bash(*)",
+      "mcp__puppeteer__puppeteer_navigate",
+      "mcp__puppeteer__puppeteer_screenshot",
+      "mcp__puppeteer__puppeteer_click",
+      "mcp__puppeteer__puppeteer_fill",
+      "mcp__puppeteer__puppeteer_select",
+      "mcp__puppeteer__puppeteer_hover",
+      "mcp__puppeteer__puppeteer_evaluate",
+      "mcp__linear__list_teams",
+      "mcp__linear__get_team",
+      "mcp__linear__list_projects",
+      "mcp__linear__get_project",
+      "mcp__linear__create_project",
+      "mcp__linear__update_project",
+      "mcp__linear__list_issues",
+      "mcp__linear__get_issue",
+      "mcp__linear__create_issue",
+      "mcp__linear__update_issue",
+      "mcp__linear__list_my_issues",
+      "mcp__linear__list_comments",
+      "mcp__linear__create_comment",
+      "mcp__linear__list_issue_statuses",
+      "mcp__linear__get_issue_status",
+      "mcp__linear__list_issue_labels",
+      "mcp__linear__list_users",
+      "mcp__linear__get_user"
+    ]
+  }
+}

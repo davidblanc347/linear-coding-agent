@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block title %}Résultat - {{ result.document_name }}{% endblock %}
+
+{% block content %}
+{# Dictionnaire de traduction des types de chunks #}
+{% set chunk_types = {
+    'main_content': {'label': 'Contenu principal', 'icon': '📄', 'desc': 'Paragraphe de contenu substantiel'},
+    'exposition': {'label': 'Exposition', 'icon': '📖', 'desc': 'Présentation d\'idées ou de contexte'},
+    'argument': {'label': 'Argument', 'icon': '💭', 'desc': 'Raisonnement ou argumentation'},
+    'définition': {'label': 'Définition', 'icon': '📌', 'desc': 'Définition de concept ou terme'},
+    'example': {'label': 'Exemple', 'icon': '💡', 'desc': 'Illustration ou cas pratique'},
+    'citation': {'label': 'Citation', 'icon': '💬', 'desc': 'Citation d\'auteur ou référence'},
+    'abstract': {'label': 'Résumé', 'icon': '📋', 'desc': 'Résumé ou synthèse'},
+    'preface': {'label': 'Préface', 'icon': '✍️', 'desc': 'Préface, avant-propos ou avertissement'},
+    'conclusion': {'label': 'Conclusion', 'icon': '🎯', 'desc': 'Conclusion d\'une argumentation'}
+} %}
+
+<section class="section">
+    <h1>✅ Traitement terminé</h1>
+    <p class="lead">Le document <strong>{{ result.document_name }}</strong> a été analysé avec succès</p>
+
+    <div class="ornament">· · ·</div>
+
+    <!-- Statistiques -->
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-number">{{ result.pages }}</div>
+            <div class="stat-label">Pages</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">{{ result.chunks_count or 0 }}</div>
+            <div class="stat-label">Chunks</div>
+        </div>
+        {% if result.files.images %}
+        <div class="stat-box">
+            <div class="stat-number">{{ result.files.images|length }}</div>
+            <div class="stat-label">Images</div>
+        </div>
+        {% endif %}
+        <div class="stat-box">
+            <div class="stat-number">{{ "%.4f"|format(result.cost_total or result.cost or 0) }}€</div>
+            <div class="stat-label">Coût Total</div>
+        </div>
+    </div>
+    
+    <!-- Détail des coûts si Mistral API -->
+    {% if result.llm_stats %}
+    <div class="card mt-3">
+        <h3>💰 Détail des coûts</h3>
+        <div class="mt-2">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.5rem 0;"><strong>OCR Mistral</strong></td>
+                    <td style="padding: 0.5rem 0; text-align: right;">{{ "%.4f"|format(result.cost_ocr or 0) }}€</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.5rem 0;"><strong>LLM Mistral API</strong></td>
+                    <td style="padding: 0.5rem 0; text-align: right;">{{ "%.4f"|format(result.cost_llm or 0) }}€</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.5rem 0; color: var(--color-text-muted);">└ {{ result.llm_stats.calls_count }} appels</td>
+                    <td style="padding: 0.5rem 0; text-align: right; color: var(--color-text-muted);">
+                        {{ result.llm_stats.total_input_tokens + result.llm_stats.total_output_tokens }} tokens
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 0.5rem 0;"><strong>Total</strong></td>
+                    <td style="padding: 0.5rem 0; text-align: right; font-weight: bold; color: var(--color-accent);">
+                        {{ "%.4f"|format(result.cost_total or 0) }}€
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <hr class="divider">
+
+    <!-- Métadonnées du document -->
+    <div class="card">
+        <h3>📖 Informations du document</h3>
+        <div class="mt-2">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0; width: 150px;"><strong>Œuvre</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <span class="badge badge-author">{{ result.metadata.work or result.document_name }}</span>
+                    </td>
+                </tr>
+                {% if result.metadata.title %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Titre</strong></td>
+                    <td style="padding: 0.75rem 0;">{{ result.metadata.title }}</td>
+                </tr>
+                {% endif %}
+                {% if result.metadata.author %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Auteur</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <span class="badge badge-author">{{ result.metadata.author }}</span>
+                    </td>
+                </tr>
+                {% endif %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Pages</strong></td>
+                    <td style="padding: 0.75rem 0;">{{ result.pages }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 0.75rem 0;"><strong>Chunks</strong></td>
+                    <td style="padding: 0.75rem 0;">{{ result.chunks_count or result.metadata.chunks_count or 0 }} segments de texte</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Table des matières -->
+    {% if result.metadata.toc and result.metadata.toc|length > 0 %}
+    <div class="card mt-3">
+        <h3>📑 Table des matières</h3>
+        <div class="mt-2">
+            <ul style="list-style: none; padding-left: 0;">
+                {% for item in result.metadata.toc[:20] %}
+                <li style="padding: 0.4rem 0; padding-left: {{ (item.level - 1) * 1.5 }}rem; border-bottom: 1px solid rgba(125, 110, 88, 0.1);">
+                    {% if item.level == 1 %}
+                    <strong>{{ item.title }}</strong>
+                    {% else %}
+                    <span style="color: var(--color-accent-alt);">{{ item.title }}</span>
+                    {% endif %}
+                </li>
+                {% endfor %}
+                {% if result.metadata.toc|length > 20 %}
+                <li style="padding: 0.5rem 0; color: var(--color-accent);">
+                    <em>... et {{ result.metadata.toc|length - 20 }} autres sections</em>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    <hr class="divider">
+
+    <!-- Fichiers générés -->
+    <div class="card">
+        <h3>📁 Fichiers générés</h3>
+        <div class="mt-2">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Markdown</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}.md" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Chunks JSON</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}_chunks.json" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                {% if result.files.structured %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Structure LLM</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}_structured.json" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                {% endif %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>OCR brut</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}_ocr.json" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                {% if result.files.weaviate %}
+                <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                    <td style="padding: 0.75rem 0;"><strong>Weaviate JSON</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        <a href="/output/{{ result.document_name }}/{{ result.document_name }}_weaviate.json" target="_blank" class="btn btn-sm">
+                            Voir le fichier
+                        </a>
+                    </td>
+                </tr>
+                {% endif %}
+                {% if result.files.images %}
+                <tr>
+                    <td style="padding: 0.75rem 0;"><strong>Images</strong></td>
+                    <td style="padding: 0.75rem 0;">
+                        {{ result.files.images|length }} image(s) dans <code>images/</code>
+                    </td>
+                </tr>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <!-- Données insérées dans Weaviate -->
+    {% if result.weaviate_ingest %}
+    <div class="card mt-3">
+        <h3>🗄️ Données insérées dans Weaviate</h3>
+        <div class="mt-2">
+            {% if result.weaviate_ingest.success %}
+                <div class="alert alert-success" style="background-color: rgba(85, 107, 99, 0.1); border: 1px solid rgba(85, 107, 99, 0.3); color: var(--color-accent-alt); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <strong>✓ Ingestion réussie :</strong> {{ result.weaviate_ingest.count }} passages insérés dans la collection <code>Passage</code>
+                </div>
+                
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 1rem;">
+                    <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                        <td style="padding: 0.5rem 0; width: 120px;"><strong>Œuvre</strong></td>
+                        <td style="padding: 0.5rem 0;"><span class="badge badge-author">{{ result.weaviate_ingest.work }}</span></td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid rgba(125, 110, 88, 0.2);">
+                        <td style="padding: 0.5rem 0;"><strong>Auteur</strong></td>
+                        <td style="padding: 0.5rem 0;"><span class="badge badge-author">{{ result.weaviate_ingest.author }}</span></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.5rem 0;"><strong>Passages</strong></td>
+                        <td style="padding: 0.5rem 0;">{{ result.weaviate_ingest.count }} objets vectorisés</td>
+                    </tr>
+                </table>
+
+                <h4 style="font-size: 1rem; margin-top: 1.5rem; margin-bottom: 0.75rem;">Aperçu des passages insérés :</h4>
+                
+                {% for passage in result.weaviate_ingest.inserted[:5] %}
+                <div style="background: var(--color-bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 0.75rem; border-left: 3px solid var(--color-accent);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <span style="font-size: 0.85rem; color: var(--color-accent);">📄 {{ passage.section }}</span>
+                            {% set type_info = chunk_types.get(passage.unitType, {'label': passage.unitType, 'icon': '📝', 'desc': 'Type de contenu'}) %}
+                            <span style="font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: rgba(125, 110, 88, 0.15);" title="{{ type_info.desc }}">
+                                {{ type_info.icon }} {{ type_info.label }}
+                            </span>
+                        </div>
+                        <span style="font-size: 0.7rem; color: var(--color-text-muted);">{{ passage.chunk_id }}</span>
+                    </div>
+                    <div style="font-style: italic; color: var(--color-text-main); font-size: 0.9rem; line-height: 1.5;">
+                        "{{ passage.text_preview }}"
+                    </div>
+                </div>
+                {% endfor %}
+                
+                {% if result.weaviate_ingest.count > 5 %}
+                <p class="text-muted text-center" style="margin-top: 1rem;">
+                    <em>... et {{ result.weaviate_ingest.count - 5 }} autres passages</em>
+                </p>
+                {% endif %}
+
+            {% else %}
+                <div class="alert alert-warning" style="background-color: rgba(125, 110, 88, 0.1); border: 1px solid rgba(125, 110, 88, 0.3); color: var(--color-accent); padding: 1rem; border-radius: 8px;">
+                    <strong>⚠️ Erreur d'ingestion :</strong> {{ result.weaviate_ingest.error }}
+                </div>
+                <p class="text-muted">Vérifiez que Weaviate est démarré (<code>docker compose up -d</code>) et que le schéma est initialisé (<code>python schema.py</code>).</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Images extraites -->
+    {% if result.files.images %}
+    <div class="card mt-3">
+        <h3>🖼️ Images extraites</h3>
+        <div class="mt-2" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem;">
+            {% for img in result.files.images[:12] %}
+            <div style="text-align: center;">
+                <a href="/output/{{ result.document_name }}/images/{{ img.split('/')[-1].split('\\')[-1] }}" target="_blank">
+                    <img 
+                        src="/output/{{ result.document_name }}/images/{{ img.split('/')[-1].split('\\')[-1] }}" 
+                        alt="Image" 
+                        style="max-width: 100%; max-height: 120px; border-radius: 8px; border: 1px solid rgba(125, 110, 88, 0.2);"
+                    >
+                </a>
+                <div class="caption">{{ img.split('/')[-1].split('\\')[-1] }}</div>
+            </div>
+            {% endfor %}
+            {% if result.files.images|length > 12 %}
+            <div style="display: flex; align-items: center; justify-content: center;">
+                <span class="text-muted">+ {{ result.files.images|length - 12 }} autres</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="text-center mt-4">
+        <a href="/upload" class="btn btn-primary">Analyser un autre PDF</a>
+        <a href="/documents" class="btn" style="margin-left: 0.5rem;">Voir tous les documents</a>
+    </div>
+</section>
+{% endblock %}

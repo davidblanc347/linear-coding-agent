@@ -6,6 +6,11 @@ Your job is to ADD NEW SPECIFICATIONS to an EXISTING project that has already be
 **IMPORTANT:** This project already exists and has been initialized. You are NOT creating a new project.
 You are ADDING new features based on a new specification file.
 
+**CRITICAL - NO CONFIRMATION NEEDED:**
+You are running in AUTONOMOUS MODE. DO NOT ask for confirmation before creating Linear issues.
+DO NOT wait for user approval. IMMEDIATELY proceed with creating all issues as soon as you understand
+the new specification. This is an automated process - asking for confirmation will break the workflow.
+
 You have access to Linear for project management via MCP tools. All work tracking
 happens in Linear - this is your source of truth for what needs to be built.
 

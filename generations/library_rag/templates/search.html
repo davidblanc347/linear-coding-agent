@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Recherche{% endblock %}
+
+{% block content %}
+<section class="section">
+    <h1>🔍 Recherche sémantique</h1>
+    <p class="lead">Posez une question en langage naturel pour trouver des passages pertinents</p>
+
+    <!-- Search form -->
+    <div class="search-box">
+        <form method="get" action="/search">
+            <div class="form-group">
+                <label class="form-label" for="q">Votre question</label>
+                <input 
+                    type="text" 
+                    name="q" 
+                    id="q" 
+                    class="form-control search-input" 
+                    value="{{ query }}"
+                    placeholder="Ex: Qu'est-ce que la sagesse ? Pourquoi philosopher ?"
+                    autofocus
+                >
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="author">Auteur</label>
+                    <select name="author" id="author" class="form-control">
+                        <option value="">Tous les auteurs</option>
+                        {% if stats and stats.author_list %}
+                            {% for author in stats.author_list %}
+                                <option value="{{ author }}" {{ 'selected' if author_filter == author else '' }}>{{ author }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="work">Œuvre</label>
+                    <select name="work" id="work" class="form-control">
+                        <option value="">Toutes les œuvres</option>
+                        {% if stats and stats.work_list %}
+                            {% for work in stats.work_list %}
+                                <option value="{{ work }}" {{ 'selected' if work_filter == work else '' }}>{{ work }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="limit">Résultats</label>
+                    <select name="limit" id="limit" class="form-control">
+                        <option value="5" {{ 'selected' if limit == 5 else '' }}>5</option>
+                        <option value="10" {{ 'selected' if limit == 10 else '' }}>10</option>
+                        <option value="20" {{ 'selected' if limit == 20 else '' }}>20</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-2">
+                <button type="submit" class="btn btn-primary">Rechercher</button>
+                <a href="/search" class="btn" style="margin-left: 0.5rem;">Réinitialiser</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Results -->
+    {% if query %}
+        <div class="ornament">·</div>
+        
+        {% if results %}
+            <div class="mb-3">
+                <strong>{{ results | length }}</strong> passage{% if results | length > 1 %}s{% endif %} trouvé{% if results | length > 1 %}s{% endif %}
+                {% if author_filter or work_filter %}
+                    <span class="text-muted">—</span>
+                    {% if author_filter %}
+                        <span class="badge badge-author">{{ author_filter }}</span>
+                    {% endif %}
+                    {% if work_filter %}
+                        <span class="badge badge-work">{{ work_filter }}</span>
+                    {% endif %}
+                {% endif %}
+            </div>
+
+            {% for result in results %}
+                <div class="passage-card">
+                    <div class="passage-header">
+                        <div>
+                            <span class="badge badge-work">{{ result.work.title if result.work else '?' }} {{ result.sectionPath or '' }}</span>
+                            <span class="badge badge-author">{{ result.work.author if result.work else 'Anonyme' }}</span>
+                        </div>
+                        {% if result.similarity %}
+                            <span class="badge badge-similarity">⚡ {{ result.similarity }}% similaire</span>
+                        {% endif %}
+                    </div>
+                    <div class="passage-text">"{{ result.text }}"</div>
+                    <div class="passage-meta">
+                        <strong>Type :</strong> {{ result.unitType or '—' }} &nbsp;│&nbsp;
+                        <strong>Langue :</strong> {{ (result.language or '—') | upper }} &nbsp;│&nbsp;
+                        <strong>Index :</strong> {{ result.orderIndex or '—' }}
+                    </div>
+                    {% if result.keywords %}
+                        <div class="mt-2">
+                            {% for kw in result.keywords %}
+                                <span class="keyword-tag">{{ kw }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">🔮</div>
+                <h3>Aucun résultat trouvé</h3>
+                <p class="text-muted">Essayez une autre formulation ou modifiez vos filtres.</p>
+            </div>
+        {% endif %}
+    {% else %}
+        <!-- Suggestions -->
+        <div class="card">
+            <h3>💡 Suggestions de recherche</h3>
+            <div class="mt-2">
+                <p class="mb-2">Voici quelques exemples de questions que vous pouvez poser :</p>
+                <div>
+                    <a href="/search?q=Qu%27est-ce%20que%20la%20vertu%20%3F" class="badge" style="cursor: pointer;">Qu'est-ce que la vertu ?</a>
+                    <a href="/search?q=La%20mort%20est-elle%20%C3%A0%20craindre%20%3F" class="badge" style="cursor: pointer;">La mort est-elle à craindre ?</a>
+                    <a href="/search?q=Comment%20atteindre%20le%20bonheur%20%3F" class="badge" style="cursor: pointer;">Comment atteindre le bonheur ?</a>
+                    <a href="/search?q=Qu%27est-ce%20que%20la%20justice%20%3F" class="badge" style="cursor: pointer;">Qu'est-ce que la justice ?</a>
+                    <a href="/search?q=L%27%C3%A2me%20est-elle%20immortelle%20%3F" class="badge" style="cursor: pointer;">L'âme est-elle immortelle ?</a>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+

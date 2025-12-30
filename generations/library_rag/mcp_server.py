@@ -1,0 +1,592 @@
+"""
+Library RAG MCP Server - PDF Ingestion & Semantic Retrieval.
+
+This module provides an MCP (Model Context Protocol) server that exposes
+Library RAG capabilities as tools for LLMs. It provides:
+
+- 1 parsing tool: parse_pdf (PDF ingestion with optimal parameters)
+- 7 retrieval tools: semantic search and document management
+
+The server uses stdio transport for communication with LLM clients
+like Claude Desktop.
+
+Example:
+    Run the server directly::
+
+        python mcp_server.py
+
+    Or configure in Claude Desktop claude_desktop_config.json::
+
+        {
+            "mcpServers": {
+                "library-rag": {
+                    "command": "python",
+                    "args": ["path/to/mcp_server.py"],
+                    "env": {"MISTRAL_API_KEY": "your-key"}
+                }
+            }
+        }
+"""
+
+import logging
+import signal
+import sys
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, AsyncIterator, Dict
+
+from mcp.server.fastmcp import FastMCP
+
+from mcp_config import MCPConfig
+from mcp_tools import (
+    ParsePdfInput,
+    parse_pdf_handler,
+    SearchChunksInput,
+    search_chunks_handler,
+    SearchSummariesInput,
+    search_summaries_handler,
+    GetDocumentInput,
+    get_document_handler,
+    ListDocumentsInput,
+    list_documents_handler,
+    GetChunksByDocumentInput,
+    get_chunks_by_document_handler,
+    FilterByAuthorInput,
+    filter_by_author_handler,
+    DeleteDocumentInput,
+    delete_document_handler,
+    # Logging utilities
+    setup_mcp_logging,
+    # Exception types for error handling
+    WeaviateConnectionError,
+    PDFProcessingError,
+)
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+
+# Note: We use setup_mcp_logging from mcp_tools.logging_config for structured
+# JSON logging. The function is imported at the top of this file.
+
+
+# =============================================================================
+# Global State
+# =============================================================================
+
+# Configuration loaded at startup
+config: MCPConfig | None = None
+logger: logging.Logger | None = None
+
+
+# =============================================================================
+# Server Lifecycle
+# =============================================================================
+
+
+@asynccontextmanager
+async def server_lifespan(server: FastMCP) -> AsyncIterator[None]:
+    """
+    Manage server lifecycle - startup and shutdown.
+
+    This context manager handles:
+    - Loading configuration from environment
+    - Validating configuration
+    - Setting up logging
+    - Graceful shutdown cleanup
+
+    Args:
+        server: The FastMCP server instance.
+
+    Yields:
+        None during server runtime.
+
+    Raises:
+        ValueError: If configuration is invalid or missing required values.
+    """
+    global config, logger
+
+    # Startup
+    try:
+        # Load and validate configuration
+        config = MCPConfig.from_env()
+        config.validate()
+
+        # Setup structured JSON logging with configured level
+        logger = setup_mcp_logging(
+            log_level=config.log_level,
+            log_dir=Path("logs"),
+            json_format=True,
+        )
+        logger.info(
+            "Library RAG MCP Server starting",
+            extra={
+                "event": "server_startup",
+                "weaviate_url": config.weaviate_url,
+                "output_dir": str(config.output_dir),
+                "llm_provider": config.default_llm_provider,
+                "log_level": config.log_level,
+            },
+        )
+
+        yield
+
+    except ValueError as e:
+        # Configuration error - log and re-raise
+        if logger:
+            logger.error(
+                "Configuration error",
+                extra={
+                    "event": "config_error",
+                    "error_message": str(e),
+                },
+            )
+        else:
+            print(f"Configuration error: {e}", file=sys.stderr)
+        raise
+
+    finally:
+        # Shutdown
+        if logger:
+            logger.info(
+                "Library RAG MCP Server shutting down",
+                extra={"event": "server_shutdown"},
+            )
+
+
+# =============================================================================
+# MCP Server Initialization
+# =============================================================================
+
+# Create the MCP server with lifespan management
+mcp = FastMCP(
+    name="library-rag",
+    lifespan=server_lifespan,
+)
+
+
+# =============================================================================
+# Tool Registration (placeholders - to be implemented in separate modules)
+# =============================================================================
+
+
+@mcp.tool()
+async def ping() -> str:
+    """
+    Health check tool to verify server is running.
+
+    Returns:
+        Success message with server status.
+    """
+    return "Library RAG MCP Server is running!"
+
+
+@mcp.tool()
+async def parse_pdf(pdf_path: str) -> Dict[str, Any]:
+    """
+    Process a PDF document with optimal pre-configured parameters.
+
+    Ingests a PDF file into the Library RAG system using Mistral OCR and LLM
+    for intelligent processing. The document is automatically chunked,
+    vectorized, and stored in Weaviate for semantic search.
+
+    Fixed optimal parameters used:
+    - LLM: Mistral API (mistral-medium-latest)
+    - OCR: With annotations (better TOC extraction)
+    - Chunking: Semantic LLM-based (argumentative units)
+    - Ingestion: Automatic Weaviate vectorization
+
+    Args:
+        pdf_path: Local file path or URL to the PDF document.
+
+    Returns:
+        Dictionary containing:
+        - success: Whether processing succeeded
+        - document_name: Name of the processed document
+        - source_id: Unique identifier for retrieval
+        - pages: Number of pages processed
+        - chunks_count: Number of chunks created
+        - cost_ocr: OCR cost in EUR
+        - cost_llm: LLM cost in EUR
+        - cost_total: Total processing cost
+        - output_dir: Directory with output files
+        - metadata: Extracted document metadata
+        - error: Error message if failed
+    """
+    input_data = ParsePdfInput(pdf_path=pdf_path)
+    result = await parse_pdf_handler(input_data)
+    return result.model_dump(mode='json')
+
+
+
+
+@mcp.tool()
+async def search_chunks(
+    query: str,
+    limit: int = 10,
+    min_similarity: float = 0.0,
+    author_filter: str | None = None,
+    work_filter: str | None = None,
+    language_filter: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Search for text chunks using semantic similarity.
+
+    Performs a near_text query on the Weaviate Chunk collection to find
+    semantically similar text passages from the indexed philosophical texts.
+
+    Args:
+        query: The search query text (e.g., "la justice et la vertu").
+        limit: Maximum number of results to return (1-100, default 10).
+        min_similarity: Minimum similarity threshold 0-1 (default 0).
+        author_filter: Filter by author name (e.g., "Platon").
+        work_filter: Filter by work title (e.g., "La Republique").
+        language_filter: Filter by language code (e.g., "fr", "en").
+
+    Returns:
+        Dictionary containing:
+        - results: List of matching chunks with text and metadata
+        - total_count: Number of results returned
+        - query: The original search query
+    """
+    input_data = SearchChunksInput(
+        query=query,
+        limit=limit,
+        min_similarity=min_similarity,
+        author_filter=author_filter,
+        work_filter=work_filter,
+        language_filter=language_filter,
+    )
+    result = await search_chunks_handler(input_data)
+    return result.model_dump(mode='json')
+
+
+@mcp.tool()
+async def search_summaries(
+    query: str,
+    limit: int = 10,
+    min_level: int | None = None,
+    max_level: int | None = None,
+) -> Dict[str, Any]:
+    """
+    Search for chapter/section summaries using semantic similarity.
+
+    Performs a near_text query on the Weaviate Summary collection to find
+    semantically similar summaries from indexed philosophical texts.
+
+    Hierarchy levels:
+    - Level 1: Chapters (highest level)
+    - Level 2: Sections
+    - Level 3: Subsections
+    - etc.
+
+    Args:
+        query: The search query text (e.g., "la vertu et l'education").
+        limit: Maximum number of results to return (1-100, default 10).
+        min_level: Minimum hierarchy level filter (1=chapter, optional).
+        max_level: Maximum hierarchy level filter (optional).
+
+    Returns:
+        Dictionary containing:
+        - results: List of matching summaries with text and metadata
+        - total_count: Number of results returned
+        - query: The original search query
+
+    Example:
+        Search for summaries about virtue at chapter level only::
+
+            search_summaries(
+                query="la vertu",
+                limit=5,
+                min_level=1,
+                max_level=1
+            )
+    """
+    input_data = SearchSummariesInput(
+        query=query,
+        limit=limit,
+        min_level=min_level,
+        max_level=max_level,
+    )
+    result = await search_summaries_handler(input_data)
+    return result.model_dump(mode='json')
+
+
+@mcp.tool()
+async def get_document(
+    source_id: str,
+    include_chunks: bool = False,
+    chunk_limit: int = 50,
+) -> Dict[str, Any]:
+    """
+    Retrieve a document by its source ID with optional chunks.
+
+    Fetches complete document metadata and optionally related text chunks
+    from the Weaviate database.
+
+    Args:
+        source_id: Document source ID (e.g., "platon-menon").
+        include_chunks: Include document chunks in response (default False).
+        chunk_limit: Maximum chunks to return if include_chunks=True (1-500, default 50).
+
+    Returns:
+        Dictionary containing:
+        - document: Document metadata (title, author, pages, TOC, hierarchy)
+        - chunks: List of chunks (if include_chunks=True)
+        - chunks_total: Total number of chunks in document
+        - found: Whether document was found
+        - error: Error message if not found
+
+    Example:
+        Get document metadata only::
+
+            get_document(source_id="platon-menon")
+
+        Get document with first 20 chunks::
+
+            get_document(
+                source_id="platon-menon",
+                include_chunks=True,
+                chunk_limit=20
+            )
+    """
+    input_data = GetDocumentInput(
+        source_id=source_id,
+        include_chunks=include_chunks,
+        chunk_limit=chunk_limit,
+    )
+    result = await get_document_handler(input_data)
+    return result.model_dump(mode='json')
+
+
+@mcp.tool()
+async def list_documents(
+    author_filter: str | None = None,
+    work_filter: str | None = None,
+    language_filter: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """
+    List all documents with filtering and pagination support.
+
+    Retrieves a list of all documents stored in the Library RAG system.
+    Supports filtering by author, work title, and language, as well as
+    pagination with limit and offset parameters.
+
+    Args:
+        author_filter: Filter by author name (e.g., "Platon").
+        work_filter: Filter by work title (e.g., "La Republique").
+        language_filter: Filter by language code (e.g., "fr", "en").
+        limit: Maximum number of results to return (1-250, default 50).
+        offset: Number of results to skip for pagination (default 0).
+
+    Returns:
+        Dictionary containing:
+        - documents: List of document summaries (source_id, title, author, pages, chunks_count, language)
+        - total_count: Total number of documents matching filters
+        - limit: Applied limit value
+        - offset: Applied offset value
+
+    Example:
+        List all French documents::
+
+            list_documents(language_filter="fr")
+
+        Paginate through results::
+
+            list_documents(limit=10, offset=0)  # First 10
+            list_documents(limit=10, offset=10)  # Next 10
+    """
+    input_data = ListDocumentsInput(
+        author_filter=author_filter,
+        work_filter=work_filter,
+        language_filter=language_filter,
+        limit=limit,
+        offset=offset,
+    )
+    result = await list_documents_handler(input_data)
+    return result.model_dump(mode='json')
+
+
+@mcp.tool()
+async def get_chunks_by_document(
+    source_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    section_filter: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Retrieve all chunks for a document in sequential order.
+
+    Fetches all text chunks belonging to a specific document, ordered by
+    their position in the document (orderIndex). Supports pagination and
+    optional filtering by section path.
+
+    Args:
+        source_id: Document source ID (e.g., "platon-menon").
+        limit: Maximum number of chunks to return (1-500, default 50).
+        offset: Number of chunks to skip for pagination (default 0).
+        section_filter: Filter by section path prefix (e.g., "Chapter 1").
+
+    Returns:
+        Dictionary containing:
+        - chunks: List of chunks in document order
+        - total_count: Total number of chunks in document
+        - document_source_id: The queried document source ID
+        - limit: Applied limit value
+        - offset: Applied offset value
+
+    Example:
+        Get first 20 chunks::
+
+            get_chunks_by_document(source_id="platon-menon", limit=20)
+
+        Get chunks from a specific section::
+
+            get_chunks_by_document(
+                source_id="platon-menon",
+                section_filter="Chapter 3"
+            )
+
+        Paginate through chunks::
+
+            get_chunks_by_document(source_id="platon-menon", limit=50, offset=0)
+            get_chunks_by_document(source_id="platon-menon", limit=50, offset=50)
+    """
+    input_data = GetChunksByDocumentInput(
+        source_id=source_id,
+        limit=limit,
+        offset=offset,
+        section_filter=section_filter,
+    )
+    result = await get_chunks_by_document_handler(input_data)
+    return result.model_dump(mode='json')
+
+
+@mcp.tool()
+async def filter_by_author(
+    author: str,
+    include_chunk_counts: bool = True,
+) -> Dict[str, Any]:
+    """
+    Get all works and documents by a specific author.
+
+    Retrieves all works associated with an author, along with their related
+    documents. Optionally includes total chunk counts for each work.
+
+    Args:
+        author: The author name to search for (e.g., "Platon", "Aristotle").
+        include_chunk_counts: Whether to include chunk counts (default True).
+
+    Returns:
+        Dictionary containing:
+        - author: The searched author name
+        - works: List of works with work info and documents
+        - total_works: Total number of works by this author
+        - total_documents: Total number of documents across all works
+        - total_chunks: Total number of chunks (if include_chunk_counts=True)
+
+    Example:
+        Get all works by Platon::
+
+            filter_by_author(author="Platon")
+
+        Get works without chunk counts (faster)::
+
+            filter_by_author(author="Platon", include_chunk_counts=False)
+    """
+    input_data = FilterByAuthorInput(
+        author=author,
+        include_chunk_counts=include_chunk_counts,
+    )
+    result = await filter_by_author_handler(input_data)
+    return result.model_dump(mode='json')
+
+
+@mcp.tool()
+async def delete_document(
+    source_id: str,
+    confirm: bool = False,
+) -> Dict[str, Any]:
+    """
+    Delete a document and all its chunks/summaries from Weaviate.
+
+    Removes all data associated with a document: the Document object itself,
+    all Chunk objects, and all Summary objects. Requires explicit confirmation
+    to prevent accidental deletions.
+
+    IMPORTANT: This operation is irreversible. Use with caution.
+
+    Args:
+        source_id: Document source ID to delete (e.g., "platon-menon").
+        confirm: Must be True to confirm deletion (safety check, default False).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether deletion succeeded
+        - source_id: The deleted document source ID
+        - chunks_deleted: Number of chunks deleted
+        - summaries_deleted: Number of summaries deleted
+        - error: Error message if failed
+
+    Example:
+        Delete a document (requires confirmation)::
+
+            delete_document(
+                source_id="platon-menon",
+                confirm=True
+            )
+
+        Without confirm=True, the operation will fail with an error message::
+
+            delete_document(source_id="platon-menon")
+            # Returns: {"success": false, "error": "Confirmation required..."}
+    """
+    input_data = DeleteDocumentInput(
+        source_id=source_id,
+        confirm=confirm,
+    )
+    result = await delete_document_handler(input_data)
+    return result.model_dump(mode='json')
+
+
+# =============================================================================
+# Signal Handlers
+# =============================================================================
+
+
+def handle_shutdown(signum: int, frame: object) -> None:
+    """
+    Handle shutdown signals gracefully.
+
+    Args:
+        signum: Signal number received.
+        frame: Current stack frame (unused).
+    """
+    if logger:
+        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    sys.exit(0)
+
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
+
+
+def main() -> None:
+    """
+    Main entry point for the MCP server.
+
+    Sets up signal handlers and runs the server with stdio transport.
+    """
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+
+    # Run the server with stdio transport (default for MCP)
+    mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

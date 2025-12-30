@@ -1,0 +1,70 @@
+# Library RAG - Weaviate + BGE-M3 Embeddings
+# ===========================================
+#
+# This docker-compose runs Weaviate with BAAI/bge-m3 embedding model.
+#
+# BGE-M3 Advantages:
+#   - 1024 dimensions (vs 384 for MiniLM-L6) - 2.7x richer representation
+#   - 8192 token context (vs 512) - 16x longer sequences
+#   - Superior multilingual support (Greek, Latin, French, English)
+#   - Better trained on academic/philosophical texts
+#
+# GPU Configuration:
+#   - ENABLE_CUDA="1" - Uses NVIDIA GPU for faster vectorization
+#   - ENABLE_CUDA="0" - Uses CPU only (slower but functional)
+#   - GPU device mapping included for CUDA acceleration
+#
+# Migration Note (2024-12):
+#   Migrated from sentence-transformers-multi-qa-MiniLM-L6-cos-v1 (384-dim)
+#   to BAAI/bge-m3 (1024-dim). All collections were deleted and recreated.
+#   See MIGRATION_BGE_M3.md for details.
+
+services:
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.34.4
+    restart: on-failure:0
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      QUERY_DEFAULTS_LIMIT: "25"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"   # ok pour dev/local
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      CLUSTER_HOSTNAME: "node1"
+      DEFAULT_VECTORIZER_MODULE: "text2vec-transformers"
+      ENABLE_MODULES: "text2vec-transformers"
+      TRANSFORMERS_INFERENCE_API: "http://text2vec-transformers:8080"
+      # Limits to prevent OOM crashes
+      GOMEMLIMIT: "6GiB"
+      GOGC: "100"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    mem_limit: 8g
+    memswap_limit: 10g
+    cpus: 4
+
+  text2vec-transformers:
+    # BAAI/bge-m3: Multilingual embedding model (1024 dimensions)
+    # Superior for philosophical texts (Greek, Latin, French, English)
+    # 8192 token context window (16x longer than MiniLM-L6)
+    # Using ONNX version (only available format in Weaviate registry)
+    #
+    # GPU LIMITATION (Dec 2024):
+    #   - Weaviate only provides ONNX version of BGE-M3 (no PyTorch)
+    #   - ONNX runtime is CPU-optimized (no native CUDA support)
+    #   - GPU acceleration would require NVIDIA NIM (different architecture)
+    #   - Current setup: CPU-only with AVX2 optimization (functional but slower)
+    image: cr.weaviate.io/semitechnologies/transformers-inference:baai-bge-m3-onnx-latest
+    restart: on-failure:0
+    environment:
+      # ONNX runtime - CPU only (CUDA not supported in ONNX version)
+      ENABLE_CUDA: "0"
+      # Increased timeouts for very long chunks (e.g., Peirce CP 3.403, CP 8.388, Menon chunk 10)
+      # Default is 60s, increased to 600s (10 minutes) for exceptionally large texts (e.g., CP 8.388: 218k chars)
+      WORKER_TIMEOUT: "600"
+    mem_limit: 10g
+    memswap_limit: 12g
+    cpus: 3
+
+volumes:
+  weaviate_data:
