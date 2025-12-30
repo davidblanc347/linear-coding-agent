@@ -97,7 +97,7 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-i
 # Configuration upload
 app.config["UPLOAD_FOLDER"] = Path(__file__).parent / "output"
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB max
-ALLOWED_EXTENSIONS = {"pdf", "md"}
+ALLOWED_EXTENSIONS = {"pdf", "md", "docx"}
 
 # Stockage des jobs de traitement en cours
 processing_jobs: Dict[str, Dict[str, Any]] = {}  # {job_id: {"status": str, "queue": Queue, "result": dict}}
@@ -1940,23 +1940,108 @@ def run_processing_job(
         q.put(exception_event)
 
 
+def run_word_processing_job(
+    job_id: str,
+    file_bytes: bytes,
+    filename: str,
+    options: ProcessingOptions,
+) -> None:
+    """Execute Word processing in background with SSE event emission.
+
+    Args:
+        job_id: Unique identifier for this processing job.
+        file_bytes: Raw Word file content (.docx).
+        filename: Original filename for the Word document.
+        options: Processing options (LLM settings, etc.).
+    """
+    job: Dict[str, Any] = processing_jobs[job_id]
+    q: queue.Queue[SSEEvent] = job["queue"]
+
+    try:
+        from utils.word_pipeline import process_word
+        import tempfile
+
+        # Callback pour émettre la progression
+        def progress_callback(step: str, status: str, detail: str = "") -> None:
+            event: SSEEvent = {
+                "type": "step",
+                "step": step,
+                "status": status,
+                "detail": detail if detail else None
+            }
+            q.put(event)
+
+        # Save Word file to temporary location (python-docx needs a file path)
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp_file:
+            tmp_file.write(file_bytes)
+            tmp_path = Path(tmp_file.name)
+
+        try:
+            # Traiter le Word avec callback
+            from utils.types import LLMProvider, PipelineResult
+            from typing import cast
+
+            result: PipelineResult = process_word(
+                tmp_path,
+                use_llm=options["use_llm"],
+                llm_provider=cast(LLMProvider, options["llm_provider"]),
+                use_semantic_chunking=True,
+                ingest_to_weaviate=options["ingest_weaviate"],
+                skip_metadata_lines=5,
+                extract_images=True,
+                progress_callback=progress_callback,
+            )
+
+            job["result"] = result
+
+            if result.get("success"):
+                job["status"] = "complete"
+                doc_name: str = result.get("document_name", Path(filename).stem)
+                complete_event: SSEEvent = {
+                    "type": "complete",
+                    "redirect": f"/documents/{doc_name}/view"
+                }
+                q.put(complete_event)
+            else:
+                job["status"] = "error"
+                error_event: SSEEvent = {
+                    "type": "error",
+                    "message": result.get("error", "Erreur inconnue")
+                }
+                q.put(error_event)
+
+        finally:
+            # Clean up temporary file
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    except Exception as e:
+        job["status"] = "error"
+        job["result"] = {"error": str(e)}
+        exception_event: SSEEvent = {
+            "type": "error",
+            "message": str(e)
+        }
+        q.put(exception_event)
+
+
 @app.route("/upload", methods=["GET", "POST"])
 def upload() -> str:
-    """Handle PDF upload form display and file submission.
+    """Handle PDF/Word upload form display and file submission.
 
     GET: Displays the upload form with processing options.
-    POST: Validates the uploaded PDF, starts background processing, and
-    redirects to the progress page.
+    POST: Validates the uploaded file (PDF or Word), starts background processing,
+    and redirects to the progress page.
 
     Form Parameters (POST):
-        file: PDF file to upload (required, max 50MB).
+        file: PDF (.pdf) or Word (.docx) file to upload (required, max 50MB).
         llm_provider (str): LLM provider - "mistral" or "ollama". Defaults to "mistral".
         llm_model (str): Specific model name. Defaults based on provider.
-        skip_ocr (bool): Skip OCR if markdown already exists. Defaults to False.
+        skip_ocr (bool): Skip OCR if markdown already exists (PDF only). Defaults to False.
         use_llm (bool): Enable LLM processing steps. Defaults to True.
         ingest_weaviate (bool): Ingest chunks to Weaviate. Defaults to True.
-        use_ocr_annotations (bool): Use OCR annotations for better TOC. Defaults to False.
-        max_toc_pages (int): Max pages to scan for TOC. Defaults to 8.
+        use_ocr_annotations (bool): Use OCR annotations for better TOC (PDF only). Defaults to False.
+        max_toc_pages (int): Max pages to scan for TOC (PDF only). Defaults to 8.
 
     Returns:
         GET: Rendered upload form (upload.html).
@@ -1980,7 +2065,7 @@ def upload() -> str:
         return render_template("upload.html", error="Aucun fichier sélectionné")
 
     if not allowed_file(file.filename):
-        return render_template("upload.html", error="Format non supporté. Utilisez un fichier PDF ou Markdown (.md).")
+        return render_template("upload.html", error="Format non supporté. Utilisez un fichier PDF (.pdf) ou Word (.docx).")
 
     # Options de traitement
     llm_provider: str = request.form.get("llm_provider", "mistral")
@@ -2000,6 +2085,10 @@ def upload() -> str:
     filename: str = secure_filename(file.filename)
     file_bytes: bytes = file.read()
 
+    # Déterminer le type de fichier
+    file_extension: str = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+    is_word_document: bool = file_extension == "docx"
+
     # Créer un job de traitement
     job_id: str = str(uuid.uuid4())
     processing_jobs[job_id] = {
@@ -2009,15 +2098,23 @@ def upload() -> str:
         "filename": filename,
     }
 
-    # Démarrer le traitement en background
-    thread: threading.Thread = threading.Thread(
-        target=run_processing_job,
-        args=(job_id, file_bytes, filename, options)
-    )
+    # Démarrer le traitement en background (Word ou PDF)
+    if is_word_document:
+        thread: threading.Thread = threading.Thread(
+            target=run_word_processing_job,
+            args=(job_id, file_bytes, filename, options)
+        )
+    else:
+        thread: threading.Thread = threading.Thread(
+            target=run_processing_job,
+            args=(job_id, file_bytes, filename, options)
+        )
+
     thread.daemon = True
     thread.start()
 
     # Afficher la page de progression
+    file_type_label: str = "Word" if is_word_document else "PDF"
     return render_template("upload_progress.html", job_id=job_id, filename=filename)
 
 
