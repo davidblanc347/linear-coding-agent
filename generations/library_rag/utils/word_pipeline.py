@@ -424,16 +424,24 @@ def process_word(
         # STEP 8: Chunk Cleaning (REUSED)
         # ================================================================
         if use_llm:
-            from utils.llm_cleaner import clean_chunk
+            from utils.llm_cleaner import clean_chunk, is_chunk_valid
 
             callback("Chunk Cleaning", "running", "Cleaning chunks...")
 
             # Clean each chunk
             cleaned_chunks = []
             for chunk in chunks:
-                cleaned = clean_chunk(chunk)
-                if cleaned:  # Only keep valid chunks
-                    cleaned_chunks.append(cleaned)
+                # Extract text from chunk dict
+                text: str = chunk.get("text", "")
+
+                # Clean the text
+                cleaned_text = clean_chunk(text, use_llm=False)
+
+                # Validate chunk
+                if is_chunk_valid(cleaned_text, min_chars=30, min_words=8):
+                    # Update chunk with cleaned text
+                    chunk["text"] = cleaned_text
+                    cleaned_chunks.append(chunk)
 
             chunks = cleaned_chunks
 
