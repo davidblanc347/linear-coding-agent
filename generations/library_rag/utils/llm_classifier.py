@@ -351,8 +351,8 @@ def is_excluded_section(section: dict[str, Any]) -> bool:
         >>> is_excluded_section({"title": "Introduction", "content": "..."})
         False
     """
-    title: str = section.get("title", "").lower().strip()
-    chapter_title: str = section.get("chapterTitle", "").lower().strip()
+    title: str = (section.get("title") or "").lower().strip()
+    chapter_title: str = (section.get("chapterTitle") or "").lower().strip()
 
     # Vérifier le titre de la section
     for excluded in EXCLUDED_SECTION_TITLES:
@@ -454,7 +454,7 @@ def filter_indexable_sections(sections: list[dict[str, Any]]) -> list[dict[str, 
             continue
 
         # Vérifier si le chapitre parent est une TOC
-        chapter_title: str = s.get("chapterTitle", "").lower().strip()
+        chapter_title: str = (s.get("chapterTitle") or "").lower().strip()
         if any(excluded in chapter_title for excluded in EXCLUDED_SECTION_TITLES):
             logger.info(f"Section exclue (chapitre TOC): '{s.get('title', 'Sans titre')}' dans '{chapter_title}'")
             excluded_count += 1
@@ -497,8 +497,8 @@ def validate_classified_sections(sections: list[dict[str, Any]]) -> list[dict[st
 
     for section in sections:
         # Vérifier d'abord si le titre du chapitre parent est une TOC
-        chapter_title: str = section.get("chapter_title", "").lower().strip()
-        section_title: str = section.get("title", "").lower().strip()
+        chapter_title: str = (section.get("chapter_title") or "").lower().strip()
+        section_title: str = (section.get("title") or "").lower().strip()
 
         # Exclure si le chapitre parent est une TOC
         is_toc_chapter: bool = False

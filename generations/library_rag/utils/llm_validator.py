@@ -495,7 +495,7 @@ def apply_corrections(
         title: str = metadata["title"]
         # Si le titre contient des phrases de validation, utiliser le champ "work" à la place
         validation_phrases: List[str] = ["à confirmer", "confirmer avec", "vérifier"]
-        if any(phrase in title.lower() for phrase in validation_phrases):
+        if title and any(phrase in title.lower() for phrase in validation_phrases):
             if "work" in metadata and metadata["work"]:
                 logger.info(f"Titre remplacé par 'work': '{title}' -> '{metadata['work']}'")
                 metadata["original_title"] = title

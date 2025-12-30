@@ -56,6 +56,9 @@ def call_llm(
         >>> for token in call_llm("Test", "ollama", "qwen2.5:7b"):
         ...     print(token, end="")
     """
+    if not provider:
+        raise LLMError("Provider cannot be None or empty")
+
     provider = provider.lower()
 
     logger.info(f"[LLM Call] Provider: {provider}, Model: {model}, Stream: {stream}")
