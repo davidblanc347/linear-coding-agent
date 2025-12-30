@@ -587,6 +587,44 @@
     .sidebar-content::-webkit-scrollbar-thumb:hover {
         background: rgba(125, 110, 88, 0.5);
     }
+
+    /* Export buttons - compact size */
+    .export-word-btn,
+    .export-pdf-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        padding: 0.85rem 1.75rem;
+        margin-top: 0.75rem;
+        margin-right: 0.5rem;
+        border-radius: 8px;
+        border: 1.5px solid var(--color-accent);
+        background-color: var(--color-accent);
+        color: var(--color-bg-main);
+        font-family: var(--font-body);
+        font-size: 0.95rem;
+        font-weight: 500;
+        cursor: pointer;
+        text-decoration: none;
+        white-space: nowrap;
+        max-width: fit-content;
+        transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }
+
+    .export-word-btn:hover,
+    .export-pdf-btn:hover {
+        background-color: var(--color-accent-alt);
+        border-color: var(--color-accent-alt);
+        color: var(--color-bg-main);
+    }
+
+    .export-word-btn svg,
+    .export-pdf-btn svg {
+        width: 15px;
+        height: 15px;
+        flex-shrink: 0;
+    }
 </style>
 
 <div class="chat-container">
@@ -850,6 +888,13 @@
                 const chosenQuestion = btn.getAttribute('data-question');
                 const isReformulated = btn.classList.contains('btn-reformulated');
 
+                // Store context for export
+                window.currentChatContext = {
+                    question: chosenQuestion,
+                    isReformulated: isReformulated,
+                    originalQuestion: isReformulated ? original : null
+                };
+
                 // Disable both buttons
                 buttons.forEach(b => b.disabled = true);
 
@@ -906,8 +951,8 @@
             const data = await response.json();
             const sessionId = data.session_id;
 
-            // SSE stream
-            startSSEStream(sessionId, typingId);
+            // SSE stream with chat context
+            startSSEStream(sessionId, typingId, window.currentChatContext || {});
 
         } catch (error) {
             console.error('Error:', error);
@@ -919,7 +964,7 @@
         }
     }
 
-    function startSSEStream(sessionId, typingId) {
+    function startSSEStream(sessionId, typingId, chatContext = {}) {
         // Close previous EventSource if exists
         if (currentEventSource) {
             currentEventSource.close();
@@ -930,7 +975,15 @@
 
         let assistantMessageDiv = null;
         let assistantContentDiv = null;
+        let exportWordBtn = null;
+        let exportPdfBtn = null;
+        let exportContainer = null;
         let accumulatedText = '';
+
+        // Get chat context (question, reformulation status)
+        const currentQuestion = chatContext.question || '';
+        const isReformulated = chatContext.isReformulated || false;
+        const originalQuestion = chatContext.originalQuestion || '';
 
         eventSource.onmessage = function(event) {
             try {
@@ -951,6 +1004,9 @@
                         const result = createAssistantMessage();
                         assistantMessageDiv = result.messageDiv;
                         assistantContentDiv = result.contentDiv;
+                        exportWordBtn = result.exportWordBtn;
+                        exportPdfBtn = result.exportPdfBtn;
+                        exportContainer = result.exportContainer;
                     }
 
                     // Accumulate text
@@ -969,6 +1025,32 @@
                 }
                 else if (data.type === 'complete') {
                     // Generation complete
+
+                    // Show export buttons
+                    if (exportContainer && accumulatedText) {
+                        exportContainer.style.display = 'block';
+
+                        // Add click handler for Word export
+                        exportWordBtn.addEventListener('click', async () => {
+                            await exportToWord(
+                                currentQuestion,
+                                accumulatedText,
+                                isReformulated,
+                                originalQuestion
+                            );
+                        });
+
+                        // Add click handler for PDF export
+                        exportPdfBtn.addEventListener('click', async () => {
+                            await exportToPdf(
+                                currentQuestion,
+                                accumulatedText,
+                                isReformulated,
+                                originalQuestion
+                            );
+                        });
+                    }
+
                     eventSource.close();
                     currentEventSource = null;
                     isGenerating = false;
@@ -1033,11 +1115,42 @@
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
 
+        // Add export buttons container
+        const exportContainer = document.createElement('div');
+        exportContainer.style.display = 'none';  // Hidden until response is complete
+
+        // Add export Word button
+        const exportWordBtn = document.createElement('button');
+        exportWordBtn.className = 'export-word-btn';
+        exportWordBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                <path d="M14 2v6h6"/>
+                <path d="M10.5 13.5l1.5 3 1.5-3"/>
+            </svg>
+            Word
+        `;
+
+        // Add export PDF button
+        const exportPdfBtn = document.createElement('button');
+        exportPdfBtn.className = 'export-pdf-btn';
+        exportPdfBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                <path d="M14 2v6h6"/>
+            </svg>
+            PDF
+        `;
+
+        exportContainer.appendChild(exportWordBtn);
+        exportContainer.appendChild(exportPdfBtn);
+
         messageDiv.appendChild(label);
         messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(exportContainer);
         chatMessages.appendChild(messageDiv);
 
-        return { messageDiv, contentDiv };
+        return { messageDiv, contentDiv, exportWordBtn, exportPdfBtn, exportContainer };
     }
 
     function addErrorMessage(message) {
@@ -1163,6 +1276,76 @@
 
             sidebarContent.appendChild(chunkDiv);
         });
+    }
+
+    async function exportToWord(userQuestion, assistantResponse, isReformulated = false, originalQuestion = '') {
+        try {
+            const response = await fetch('/chat/export-word', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_question: userQuestion,
+                    assistant_response: assistantResponse,
+                    is_reformulated: isReformulated,
+                    original_question: originalQuestion
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Export failed');
+            }
+
+            // Download file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat_export_${new Date().getTime()}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+        } catch (error) {
+            console.error('Export error:', error);
+            alert(`Erreur d'export: ${error.message}`);
+        }
+    }
+
+    async function exportToPdf(userQuestion, assistantResponse, isReformulated = false, originalQuestion = '') {
+        try {
+            const response = await fetch('/chat/export-pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_question: userQuestion,
+                    assistant_response: assistantResponse,
+                    is_reformulated: isReformulated,
+                    original_question: originalQuestion
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Export failed');
+            }
+
+            // Download file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat_export_${new Date().getTime()}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+        } catch (error) {
+            console.error('Export error:', error);
+            alert(`Erreur d'export: ${error.message}`);
+        }
     }
 
     // Initialize

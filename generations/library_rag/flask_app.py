@@ -1430,6 +1430,151 @@ def chat_stream(session_id: str) -> WerkzeugResponse:
     )
 
 
+@app.route("/chat/export-word", methods=["POST"])
+def chat_export_word() -> Union[WerkzeugResponse, tuple[Dict[str, Any], int]]:
+    """Export a chat exchange to Word format.
+
+    Generates a formatted Microsoft Word document (.docx) containing the user's
+    question and the assistant's response. Supports both original and reformulated
+    questions.
+
+    Request JSON:
+        user_question (str): The user's question (required).
+        assistant_response (str): The assistant's complete response (required).
+        is_reformulated (bool, optional): Whether the question was reformulated.
+            Default: False.
+        original_question (str, optional): Original question if reformulated.
+            Only used when is_reformulated is True.
+
+    Returns:
+        Word document file download (.docx) on success.
+        JSON error response with 400/500 status on failure.
+
+    Example:
+        POST /chat/export-word
+        Content-Type: application/json
+
+        {
+            "user_question": "What is phenomenology?",
+            "assistant_response": "Phenomenology is a philosophical movement...",
+            "is_reformulated": false
+        }
+
+        Response: chat_export_20250130_143022.docx (download)
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+
+        user_question = data.get("user_question")
+        assistant_response = data.get("assistant_response")
+        is_reformulated = data.get("is_reformulated", False)
+        original_question = data.get("original_question")
+
+        if not user_question or not assistant_response:
+            return (
+                jsonify({"error": "user_question and assistant_response are required"}),
+                400,
+            )
+
+        # Import word exporter
+        from utils.word_exporter import create_chat_export
+
+        # Generate Word document
+        filepath = create_chat_export(
+            user_question=user_question,
+            assistant_response=assistant_response,
+            is_reformulated=is_reformulated,
+            original_question=original_question,
+            output_dir=app.config["UPLOAD_FOLDER"],
+        )
+
+        # Send file as download
+        return send_from_directory(
+            directory=filepath.parent,
+            path=filepath.name,
+            as_attachment=True,
+            download_name=filepath.name,
+        )
+
+    except Exception as e:
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+
+
+@app.route("/chat/export-pdf", methods=["POST"])
+def chat_export_pdf() -> Union[WerkzeugResponse, tuple[Dict[str, Any], int]]:
+    """Export a chat exchange to PDF format.
+
+    Generates a formatted PDF document containing the user's question and the
+    assistant's response. Supports both original and reformulated questions.
+
+    Request JSON:
+        user_question (str): The user's question (required).
+        assistant_response (str): The assistant's complete response (required).
+        is_reformulated (bool, optional): Whether the question was reformulated.
+            Default: False.
+        original_question (str, optional): Original question if reformulated.
+            Only used when is_reformulated is True.
+
+    Returns:
+        PDF document file download on success.
+        JSON error response with 400/500 status on failure.
+
+    Example:
+        POST /chat/export-pdf
+        Content-Type: application/json
+
+        {
+            "user_question": "What is phenomenology?",
+            "assistant_response": "Phenomenology is a philosophical movement...",
+            "is_reformulated": false
+        }
+
+        Response: chat_export_20250130_143022.pdf (download)
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+
+        user_question = data.get("user_question")
+        assistant_response = data.get("assistant_response")
+        is_reformulated = data.get("is_reformulated", False)
+        original_question = data.get("original_question")
+
+        if not user_question or not assistant_response:
+            return (
+                jsonify({"error": "user_question and assistant_response are required"}),
+                400,
+            )
+
+        # Import PDF exporter
+        from utils.pdf_exporter import create_chat_export_pdf
+
+        # Generate PDF document
+        filepath = create_chat_export_pdf(
+            user_question=user_question,
+            assistant_response=assistant_response,
+            is_reformulated=is_reformulated,
+            original_question=original_question,
+            output_dir=app.config["UPLOAD_FOLDER"],
+        )
+
+        # Send file as download
+        return send_from_directory(
+            directory=filepath.parent,
+            path=filepath.name,
+            as_attachment=True,
+            download_name=filepath.name,
+        )
+
+    except Exception as e:
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PDF Upload & Processing
 # ═══════════════════════════════════════════════════════════════════════════════
