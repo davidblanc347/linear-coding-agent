@@ -1575,6 +1575,72 @@ def chat_export_pdf() -> Union[WerkzeugResponse, tuple[Dict[str, Any], int]]:
         return jsonify({"error": f"Export failed: {str(e)}"}), 500
 
 
+@app.route("/chat/export-audio", methods=["POST"])
+def chat_export_audio() -> Union[WerkzeugResponse, tuple[Dict[str, Any], int]]:
+    """Export a chat exchange to audio format (TTS).
+
+    Generates a natural-sounding speech audio file (.wav) from the assistant's
+    response using Coqui XTTS v2 multilingual TTS model. Supports GPU acceleration
+    for faster generation.
+
+    Request JSON:
+        assistant_response (str): The assistant's complete response (required).
+        language (str, optional): Language code for TTS ("fr", "en", etc.).
+            Default: "fr" (French).
+
+    Returns:
+        Audio file download (.wav) on success.
+        JSON error response with 400/500 status on failure.
+
+    Example:
+        POST /chat/export-audio
+        Content-Type: application/json
+
+        {
+            "assistant_response": "La phénoménologie est une approche philosophique...",
+            "language": "fr"
+        }
+
+        Response: chat_audio_20250130_143045.wav (download)
+
+    Note:
+        First call will download XTTS v2 model (~2GB) and cache it.
+        GPU usage: 4-6GB VRAM. Falls back to CPU if no GPU available.
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+
+        assistant_response = data.get("assistant_response")
+        language = data.get("language", "fr")
+
+        if not assistant_response:
+            return jsonify({"error": "assistant_response is required"}), 400
+
+        # Import TTS generator
+        from utils.tts_generator import generate_speech
+
+        # Generate audio file
+        filepath = generate_speech(
+            text=assistant_response,
+            output_dir=app.config["UPLOAD_FOLDER"],
+            language=language,
+        )
+
+        # Send file as download
+        return send_from_directory(
+            directory=filepath.parent,
+            path=filepath.name,
+            as_attachment=True,
+            download_name=filepath.name,
+        )
+
+    except Exception as e:
+        return jsonify({"error": f"TTS failed: {str(e)}"}), 500
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PDF Upload & Processing
 # ═══════════════════════════════════════════════════════════════════════════════

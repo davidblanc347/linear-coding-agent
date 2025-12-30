@@ -8,6 +8,9 @@ werkzeug>=3.0.0
 python-docx>=1.1.0
 reportlab>=4.0.0
 
+# TTS dependencies
+TTS>=0.22.0
+
 # MCP Server dependencies
 mcp>=1.0.0
 pydantic>=2.0.0

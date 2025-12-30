@@ -590,7 +590,8 @@
 
     /* Export buttons - compact size */
     .export-word-btn,
-    .export-pdf-btn {
+    .export-pdf-btn,
+    .export-audio-btn {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -613,14 +614,16 @@
     }
 
     .export-word-btn:hover,
-    .export-pdf-btn:hover {
+    .export-pdf-btn:hover,
+    .export-audio-btn:hover {
         background-color: var(--color-accent-alt);
         border-color: var(--color-accent-alt);
         color: var(--color-bg-main);
     }
 
     .export-word-btn svg,
-    .export-pdf-btn svg {
+    .export-pdf-btn svg,
+    .export-audio-btn svg {
         width: 15px;
         height: 15px;
         flex-shrink: 0;
@@ -977,6 +980,7 @@
         let assistantContentDiv = null;
         let exportWordBtn = null;
         let exportPdfBtn = null;
+        let exportAudioBtn = null;
         let exportContainer = null;
         let accumulatedText = '';
 
@@ -1006,6 +1010,7 @@
                         assistantContentDiv = result.contentDiv;
                         exportWordBtn = result.exportWordBtn;
                         exportPdfBtn = result.exportPdfBtn;
+                        exportAudioBtn = result.exportAudioBtn;
                         exportContainer = result.exportContainer;
                     }
 
@@ -1048,6 +1053,11 @@
                                 isReformulated,
                                 originalQuestion
                             );
+                        });
+
+                        // Add click handler for Audio export
+                        exportAudioBtn.addEventListener('click', async () => {
+                            await exportToAudio(accumulatedText);
                         });
                     }
 
@@ -1142,15 +1152,28 @@
             PDF
         `;
 
+        // Add export Audio button
+        const exportAudioBtn = document.createElement('button');
+        exportAudioBtn.className = 'export-audio-btn';
+        exportAudioBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+            Audio
+        `;
+
         exportContainer.appendChild(exportWordBtn);
         exportContainer.appendChild(exportPdfBtn);
+        exportContainer.appendChild(exportAudioBtn);
 
         messageDiv.appendChild(label);
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(exportContainer);
         chatMessages.appendChild(messageDiv);
 
-        return { messageDiv, contentDiv, exportWordBtn, exportPdfBtn, exportContainer };
+        return { messageDiv, contentDiv, exportWordBtn, exportPdfBtn, exportAudioBtn, exportContainer };
     }
 
     function addErrorMessage(message) {
@@ -1345,6 +1368,39 @@
         } catch (error) {
             console.error('Export error:', error);
             alert(`Erreur d'export: ${error.message}`);
+        }
+    }
+
+    async function exportToAudio(assistantResponse) {
+        try {
+            const response = await fetch('/chat/export-audio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    assistant_response: assistantResponse,
+                    language: 'fr'
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'TTS failed');
+            }
+
+            // Download file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat_audio_${new Date().getTime()}.wav`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+        } catch (error) {
+            console.error('TTS error:', error);
+            alert(`Erreur TTS: ${error.message}`);
         }
     }
 
