@@ -5,7 +5,7 @@
 {% block content %}
 <section class="section">
     <h1>📄 Parser PDF/Word/Markdown</h1>
-    <p class="lead">Uploadez un fichier PDF, Word (.docx) ou Markdown pour l'analyser et structurer son contenu</p>
+    <p class="lead">Uploadez un document pour l'analyser et l'indexer dans Weaviate</p>
 
     {% if error %}
         <div class="alert alert-warning">
@@ -15,8 +15,9 @@
 
     <div class="search-box">
         <form method="post" enctype="multipart/form-data">
+            <!-- Sélection du fichier -->
             <div class="form-group">
-                <label class="form-label" for="file">Fichier PDF, Word ou Markdown</label>
+                <label class="form-label" for="file">📎 Sélectionnez votre fichier</label>
                 <input
                     type="file"
                     name="file"
@@ -24,123 +25,130 @@
                     class="form-control"
                     accept=".pdf,.docx,.md"
                     required
+                    onchange="updateOptionsForFileType()"
                 >
-                <div class="caption mt-1">Taille maximale : 50 MB</div>
-                <div class="caption" style="color: var(--color-accent); margin-top: 0.25rem;">
-                    💡 PDF: Pour retester sans refaire l'OCR payant, cochez "Skip OCR"
-                    <br>💡 Word: Pas d'OCR nécessaire (extraction directe du contenu)
+                <div class="caption mt-1">Formats acceptés : PDF (.pdf), Word (.docx) ou Markdown (.md) • Max 50 MB</div>
+            </div>
+
+            <!-- Configuration recommandée (par défaut) -->
+            <div class="card mt-4" style="border-left: 3px solid #2196F3;">
+                <h4 style="color: #2196F3;">⚙️ Configuration (Recommandée)</h4>
+                <p style="font-size: 0.9rem; color: #666; margin-bottom: 1rem;">
+                    Les options ci-dessous sont pré-configurées pour un traitement optimal.
+                    <strong>Vous pouvez simplement cliquer sur "Analyser" !</strong>
+                </p>
+
+                <!-- Options communes -->
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input
+                            type="checkbox"
+                            name="use_llm"
+                            id="use_llm"
+                            checked
+                            style="width: auto;"
+                        >
+                        <label for="use_llm" style="margin: 0; font-weight: 600;">
+                            ✅ Structuration intelligente avec LLM
+                        </label>
+                    </div>
+                    <div style="margin-left: 1.5rem; color: #666; font-size: 0.85rem;">
+                        Extraction automatique des métadonnées, chapitres, et découpage sémantique
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input
+                            type="checkbox"
+                            name="ingest_weaviate"
+                            id="ingest_weaviate"
+                            checked
+                            style="width: auto;"
+                        >
+                        <label for="ingest_weaviate" style="margin: 0; font-weight: 600;">
+                            ✅ Indexer dans Weaviate (recherche sémantique)
+                        </label>
+                    </div>
+                    <div style="margin-left: 1.5rem; color: #666; font-size: 0.85rem;">
+                        Permet de rechercher le contenu du document via l'interface de recherche
+                    </div>
+                </div>
+
+                <!-- Options PDF uniquement -->
+                <div id="pdf-only-options" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #eee;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input
+                            type="checkbox"
+                            name="skip_ocr"
+                            id="skip_ocr"
+                            style="width: auto;"
+                        >
+                        <label for="skip_ocr" style="margin: 0; font-weight: 600;">
+                            ⚡ Skip OCR (réutiliser markdown existant)
+                        </label>
+                    </div>
+                    <div style="margin-left: 1.5rem; color: #666; font-size: 0.85rem;">
+                        Utile pour retester un PDF déjà traité (évite les frais d'OCR ~0.003€/page)
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem;">
+                        <input
+                            type="checkbox"
+                            name="use_ocr_annotations"
+                            id="use_ocr_annotations"
+                            checked
+                            style="width: auto;"
+                        >
+                        <label for="use_ocr_annotations" style="margin: 0; font-weight: 600;">
+                            📑 Extraction TOC améliorée
+                        </label>
+                    </div>
+                    <div style="margin-left: 1.5rem; color: #666; font-size: 0.85rem;">
+                        Analyse l'indentation pour mieux détecter la table des matières
+                    </div>
+                </div>
+
+                <!-- Word/Markdown info -->
+                <div id="word-info" style="display: none; margin-top: 1rem; padding: 0.75rem; background: #e8f5e9; border-radius: 4px;">
+                    <strong style="color: #2e7d32;">✨ Fichier Word détecté</strong>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #555;">
+                        Extraction directe du contenu • Pas d'OCR nécessaire • TOC depuis les styles Heading
+                    </p>
+                </div>
+                <div id="markdown-info" style="display: none; margin-top: 1rem; padding: 0.75rem; background: #fff3e0; border-radius: 4px;">
+                    <strong style="color: #e65100;">✨ Fichier Markdown détecté</strong>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #555;">
+                        Fichier déjà au format Markdown • Pas d'OCR nécessaire • Traitement direct
+                    </p>
                 </div>
             </div>
 
-            <div class="form-row mt-3">
-                <div class="form-group">
-                    <label class="form-label">Options</label>
-                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <input 
-                                type="checkbox" 
-                                name="skip_ocr" 
-                                id="skip_ocr" 
-                                style="width: auto;"
-                            >
-                            <label for="skip_ocr" style="margin: 0; font-size: 0.95rem; text-transform: none; letter-spacing: 0;">
-                                ⚡ Skip OCR (réutiliser markdown existant)
-                            </label>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <input 
-                                type="checkbox" 
-                                name="use_llm" 
-                                id="use_llm" 
-                                checked
-                                style="width: auto;"
-                            >
-                            <label for="use_llm" style="margin: 0; font-size: 0.95rem; text-transform: none; letter-spacing: 0;">
-                                Activer la structuration LLM (Ollama)
-                            </label>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <input 
-                                type="checkbox" 
-                                name="ingest_weaviate" 
-                                id="ingest_weaviate" 
-                                checked
-                                style="width: auto;"
-                            >
-                            <label for="ingest_weaviate" style="margin: 0; font-size: 0.95rem; text-transform: none; letter-spacing: 0;">
-                                Insérer dans Weaviate (vectorisation)
-                            </label>
-                        </div>
+            <!-- Options avancées (repliables) -->
+            <details class="mt-3" style="cursor: pointer;">
+                <summary style="font-weight: 600; color: #666; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+                    ⚙️ Options avancées (cliquer pour afficher)
+                </summary>
+                <div style="margin-top: 1rem; padding: 1rem; border: 1px solid #ddd; border-radius: 4px;">
+                    <div class="form-group">
+                        <label class="form-label" for="llm_provider">Provider LLM</label>
+                        <select name="llm_provider" id="llm_provider" class="form-control" onchange="updateModelOptions()">
+                            <option value="mistral" selected>⚡ Mistral API (rapide, recommandé)</option>
+                            <option value="ollama">🖥️ Ollama (local, gratuit, lent)</option>
+                        </select>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="llm_provider">Provider LLM</label>
-                    <select name="llm_provider" id="llm_provider" class="form-control" onchange="updateModelOptions()">
-                        <option value="mistral" selected>⚡ Mistral API (rapide)</option>
-                        <option value="ollama">🖥️ Ollama (local, lent)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="llm_model">Modèle LLM</label>
-                    <select name="llm_model" id="llm_model" class="form-control">
-                        <!-- Options Mistral API -->
-                        <option value="mistral-small-latest" selected>mistral-small (rapide, économique)</option>
-                        <option value="mistral-medium-latest">mistral-medium (équilibré)</option>
-                        <option value="mistral-large-latest">mistral-large (puissant)</option>
-                    </select>
-                </div>
-                <script>
-                function updateModelOptions() {
-                    const provider = document.getElementById('llm_provider').value;
-                    const modelSelect = document.getElementById('llm_model');
-                    
-                    if (provider === 'mistral') {
-                        modelSelect.innerHTML = `
+                    <div class="form-group">
+                        <label class="form-label" for="llm_model">Modèle LLM</label>
+                        <select name="llm_model" id="llm_model" class="form-control">
                             <option value="mistral-small-latest" selected>mistral-small (rapide, économique)</option>
                             <option value="mistral-medium-latest">mistral-medium (équilibré)</option>
                             <option value="mistral-large-latest">mistral-large (puissant)</option>
-                        `;
-                    } else {
-                        modelSelect.innerHTML = `
-                            <option value="qwen2.5:7b" selected>qwen2.5:7b (recommandé)</option>
-                            <option value="qwen2.5:14b">qwen2.5:14b</option>
-                            <option value="llama3.2:3b">llama3.2:3b (rapide)</option>
-                            <option value="mistral:7b">mistral:7b</option>
-                        `;
-                    }
-                }
-                </script>
-            </div>
-
-            <!-- Options Extraction TOC améliorée -->
-            <div class="card mt-4" style="border-left: 3px solid #4CAF50;">
-                <h4 style="color: #4CAF50;">📑 Extraction TOC améliorée (Recommandé)</h4>
-                <p style="font-size: 0.9rem; color: #666;">
-                    Analyse l'indentation du texte pour détecter automatiquement la hiérarchie de la table des matières.
-                    <br><strong style="color: #4CAF50;">✅ Fiable, rapide et sans coût supplémentaire</strong>
-                </p>
-                <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
-                    <input 
-                        type="checkbox" 
-                        name="use_ocr_annotations" 
-                        id="use_ocr_annotations"
-                        style="width: auto;"
-                        checked
-                    >
-                    <label for="use_ocr_annotations" style="margin: 0; font-size: 0.95rem; font-weight: 600;">
-                        Activer l'analyse d'indentation pour la TOC
-                    </label>
+                        </select>
+                    </div>
                 </div>
-                <div style="margin-top: 0.75rem; padding: 0.75rem; background: #f0f9f0; border-radius: 4px; font-size: 0.85rem;">
-                    <strong>Fonctionnement :</strong> Détecte les niveaux hiérarchiques en comptant les espaces d'indentation dans la table des matières.
-                    <br>
-                    <em>Idéal pour les documents académiques avec TOC structurée.</em>
-                </div>
-            </div>
+            </details>
 
             <div class="mt-3">
-                <button type="submit" class="btn btn-primary">
-                    Analyser le document
+                <button type="submit" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 2rem;">
+                    🚀 Analyser le document
                 </button>
             </div>
         </form>
@@ -148,39 +156,99 @@
 
     <hr class="divider">
 
+    <!-- Informations sur le pipeline -->
     <div class="card">
         <h3>📋 Pipeline de traitement</h3>
         <div class="mt-2">
-            <p><strong>PDF:</strong></p>
-            <p style="margin-left: 1rem;">1. OCR Mistral — Extraction du texte et des images via l'API Mistral</p>
-            <p style="margin-left: 1rem;">2. Markdown — Construction du document Markdown avec images</p>
-            <p style="margin-left: 1rem;">3. Hiérarchie — Analyse des titres pour créer une structure arborescente</p>
-            <p style="margin-left: 1rem;">4. LLM (optionnel) — Amélioration de la structure via Ollama/Mistral</p>
+            <div id="pdf-pipeline-info">
+                <p><strong>PDF:</strong></p>
+                <p style="margin-left: 1rem;">1. OCR Mistral — Extraction du texte et des images</p>
+                <p style="margin-left: 1rem;">2. Markdown — Construction du document structuré</p>
+                <p style="margin-left: 1rem;">3. LLM — Extraction métadonnées, TOC, classification</p>
+                <p style="margin-left: 1rem;">4. Chunking — Découpage sémantique intelligent</p>
+                <p style="margin-left: 1rem;">5. Weaviate — Vectorisation et indexation</p>
+            </div>
 
-            <p class="mt-3"><strong>Word (.docx):</strong></p>
-            <p style="margin-left: 1rem;">1. Extraction Word — Lecture directe du contenu (pas d'OCR)</p>
-            <p style="margin-left: 1rem;">2. Markdown — Construction du document Markdown à partir des paragraphes</p>
-            <p style="margin-left: 1rem;">3. TOC — Extraction de la hiérarchie depuis les styles Heading 1-9</p>
-            <p style="margin-left: 1rem;">4. LLM — Structuration sémantique et enrichissement</p>
-        </div>
-    </div>
+            <div id="word-pipeline-info" style="display: none;">
+                <p><strong>Word (.docx):</strong></p>
+                <p style="margin-left: 1rem;">1. Extraction — Lecture directe du contenu Word</p>
+                <p style="margin-left: 1rem;">2. Markdown — Conversion avec styles préservés</p>
+                <p style="margin-left: 1rem;">3. TOC — Extraction depuis Heading 1-9</p>
+                <p style="margin-left: 1rem;">4. LLM — Métadonnées et structuration</p>
+                <p style="margin-left: 1rem;">5. Weaviate — Vectorisation et indexation</p>
+            </div>
 
-    <div class="card mt-3">
-        <h3>📁 Fichiers générés</h3>
-        <div class="mt-2">
-            <ul style="list-style: none;">
-                <li class="mb-1"><span class="badge">document.md</span> Texte Markdown OCR</li>
-                <li class="mb-1"><span class="badge">document_chunks.json</span> Chunks hiérarchiques</li>
-                <li class="mb-1"><span class="badge">document_structured.json</span> Structure LLM</li>
-                <li class="mb-1"><span class="badge">document_ocr.json</span> Réponse OCR brute</li>
-                <li><span class="badge">images/</span> Images extraites</li>
-            </ul>
+            <div id="markdown-pipeline-info" style="display: none;">
+                <p><strong>Markdown (.md):</strong></p>
+                <p style="margin-left: 1rem;">1. Lecture — Fichier déjà au format Markdown</p>
+                <p style="margin-left: 1rem;">2. TOC — Analyse des titres # ##</p>
+                <p style="margin-left: 1rem;">3. LLM — Métadonnées et structuration</p>
+                <p style="margin-left: 1rem;">4. Chunking — Découpage sémantique</p>
+                <p style="margin-left: 1rem;">5. Weaviate — Vectorisation et indexation</p>
+            </div>
         </div>
     </div>
 
     <div class="text-center mt-4">
-        <a href="/documents" class="btn">Voir les documents traités</a>
+        <a href="/documents" class="btn">📚 Voir les documents traités</a>
     </div>
 </section>
-{% endblock %}
 
+<script>
+function updateModelOptions() {
+    const provider = document.getElementById('llm_provider').value;
+    const modelSelect = document.getElementById('llm_model');
+
+    if (provider === 'mistral') {
+        modelSelect.innerHTML = `
+            <option value="mistral-small-latest" selected>mistral-small (rapide, économique)</option>
+            <option value="mistral-medium-latest">mistral-medium (équilibré)</option>
+            <option value="mistral-large-latest">mistral-large (puissant)</option>
+        `;
+    } else {
+        modelSelect.innerHTML = `
+            <option value="qwen2.5:7b" selected>qwen2.5:7b (recommandé)</option>
+            <option value="qwen2.5:14b">qwen2.5:14b</option>
+            <option value="llama3.2:3b">llama3.2:3b (rapide)</option>
+            <option value="mistral:7b">mistral:7b</option>
+        `;
+    }
+}
+
+function updateOptionsForFileType() {
+    const fileInput = document.getElementById('file');
+    const fileName = fileInput.files[0]?.name || '';
+    const isWord = fileName.toLowerCase().endsWith('.docx');
+    const isPDF = fileName.toLowerCase().endsWith('.pdf');
+    const isMarkdown = fileName.toLowerCase().endsWith('.md');
+
+    // Récupérer tous les éléments
+    const pdfOptions = document.getElementById('pdf-only-options');
+    const wordInfo = document.getElementById('word-info');
+    const markdownInfo = document.getElementById('markdown-info');
+    const pdfPipelineInfo = document.getElementById('pdf-pipeline-info');
+    const wordPipelineInfo = document.getElementById('word-pipeline-info');
+    const markdownPipelineInfo = document.getElementById('markdown-pipeline-info');
+
+    // Masquer tout par défaut
+    pdfOptions.style.display = 'none';
+    wordInfo.style.display = 'none';
+    markdownInfo.style.display = 'none';
+    pdfPipelineInfo.style.display = 'none';
+    wordPipelineInfo.style.display = 'none';
+    markdownPipelineInfo.style.display = 'none';
+
+    // Afficher selon le type
+    if (isWord) {
+        wordInfo.style.display = 'block';
+        wordPipelineInfo.style.display = 'block';
+    } else if (isPDF) {
+        pdfOptions.style.display = 'block';
+        pdfPipelineInfo.style.display = 'block';
+    } else if (isMarkdown) {
+        markdownInfo.style.display = 'block';
+        markdownPipelineInfo.style.display = 'block';
+    }
+}
+</script>
+{% endblock %}

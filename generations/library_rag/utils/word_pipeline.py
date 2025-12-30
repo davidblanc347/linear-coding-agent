@@ -249,18 +249,46 @@ def process_word(
 
             callback("Metadata Extraction", "running", "Extracting metadata with LLM...")
 
-            metadata = extract_metadata(
-                markdown_text,
-                provider=llm_provider,
-            )
+            try:
+                metadata_llm = extract_metadata(
+                    markdown_text,
+                    provider=llm_provider,
+                )
 
-            # Note: extract_metadata doesn't return cost directly
-
-            callback(
-                "Metadata Extraction",
-                "completed",
-                f"Title: {metadata['title'][:50]}..., Author: {metadata['author']}",
-            )
+                # Fallback to Word properties if LLM returns None
+                if metadata_llm is None:
+                    callback(
+                        "Metadata Extraction",
+                        "completed",
+                        "LLM extraction failed, using Word properties",
+                    )
+                    raw_meta = content["metadata_raw"]
+                    metadata = Metadata(
+                        title=raw_meta.get("title", doc_name),
+                        author=raw_meta.get("author", "Unknown"),
+                        year=raw_meta.get("created").year if raw_meta.get("created") else None,
+                        language=raw_meta.get("language", "unknown"),
+                    )
+                else:
+                    metadata = metadata_llm
+                    callback(
+                        "Metadata Extraction",
+                        "completed",
+                        f"Title: {metadata.get('title', '')[:50]}..., Author: {metadata.get('author', '')}",
+                    )
+            except Exception as e:
+                callback(
+                    "Metadata Extraction",
+                    "completed",
+                    f"LLM error ({str(e)}), using Word properties",
+                )
+                raw_meta = content["metadata_raw"]
+                metadata = Metadata(
+                    title=raw_meta.get("title", doc_name),
+                    author=raw_meta.get("author", "Unknown"),
+                    year=raw_meta.get("created").year if raw_meta.get("created") else None,
+                    language=raw_meta.get("language", "unknown"),
+                )
         else:
             # Use metadata from Word properties
             raw_meta = content["metadata_raw"]
@@ -303,7 +331,7 @@ def process_word(
 
             main_sections = [
                 s for s in classified_sections
-                if s["section_type"] == "main_content"
+                if s.get("type") == "main_content"
             ]
 
             callback(
@@ -316,8 +344,9 @@ def process_word(
             classified_sections = [
                 {
                     "section_path": entry["sectionPath"],
-                    "section_type": "main_content",
-                    "reason": "No LLM classification",
+                    "type": "main_content",
+                    "should_index": True,
+                    "classification_reason": "No LLM classification",
                 }
                 for entry in toc_flat
             ]
