@@ -509,10 +509,13 @@ def process_word(
             callback("Weaviate Ingestion", "running", "Ingesting into Weaviate...")
 
             ingestion_result = ingest_document(
-                metadata=metadata,
+                doc_name=doc_name,
                 chunks=chunks,
+                metadata=metadata,
+                language=metadata.get("language", "unknown"),
                 toc=toc_flat,
-                document_source_id=doc_name,
+                hierarchy=None,  # Word documents don't have page-based hierarchy
+                pages=0,  # Word documents don't have pages
             )
 
             # Save ingestion results
@@ -523,7 +526,7 @@ def process_word(
             callback(
                 "Weaviate Ingestion",
                 "completed",
-                f"Ingested {ingestion_result.get('chunks_ingested', 0)} chunks",
+                f"Ingested {ingestion_result.get('count', 0)} chunks",
             )
 
         # ================================================================
