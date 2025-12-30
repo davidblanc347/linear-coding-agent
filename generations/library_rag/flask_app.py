@@ -105,6 +105,9 @@ processing_jobs: Dict[str, Dict[str, Any]] = {}  # {job_id: {"status": str, "que
 # Stockage des sessions de chat en cours
 chat_sessions: Dict[str, Dict[str, Any]] = {}  # {session_id: {"status": str, "queue": Queue, "context": list}}
 
+# Stockage des jobs TTS en cours
+tts_jobs: Dict[str, Dict[str, Any]] = {}  # {job_id: {"status": str, "filepath": Path, "error": str}}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Weaviate Connection
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1639,6 +1642,211 @@ def chat_export_audio() -> Union[WerkzeugResponse, tuple[Dict[str, Any], int]]:
 
     except Exception as e:
         return jsonify({"error": f"TTS failed: {str(e)}"}), 500
+
+
+def _generate_audio_background(job_id: str, text: str, language: str) -> None:
+    """Background worker for TTS audio generation.
+
+    Generates audio in a separate thread to avoid blocking Flask.
+    Updates the global tts_jobs dict with status and result.
+
+    Args:
+        job_id: Unique identifier for this TTS job.
+        text: Text to convert to speech.
+        language: Language code for TTS.
+    """
+    try:
+        from utils.tts_generator import generate_speech
+
+        # Update status to processing
+        tts_jobs[job_id]["status"] = "processing"
+
+        # Generate audio file
+        filepath = generate_speech(
+            text=text,
+            output_dir=app.config["UPLOAD_FOLDER"],
+            language=language,
+        )
+
+        # Update job with success status
+        tts_jobs[job_id]["status"] = "completed"
+        tts_jobs[job_id]["filepath"] = filepath
+
+    except Exception as e:
+        # Update job with error status
+        tts_jobs[job_id]["status"] = "failed"
+        tts_jobs[job_id]["error"] = str(e)
+        print(f"TTS job {job_id} failed: {e}")
+
+
+@app.route("/chat/generate-audio", methods=["POST"])
+def chat_generate_audio() -> tuple[Dict[str, Any], int]:
+    """Start asynchronous TTS audio generation (non-blocking).
+
+    Launches TTS generation in a background thread and immediately returns
+    a job ID for status polling. This allows the Flask app to remain responsive
+    during audio generation.
+
+    Request JSON:
+        assistant_response (str): The assistant's complete response (required).
+        language (str, optional): Language code for TTS ("fr", "en", etc.).
+            Default: "fr" (French).
+
+    Returns:
+        JSON response with job_id and 202 Accepted status on success.
+        JSON error response with 400 status on validation failure.
+
+    Example:
+        POST /chat/generate-audio
+        Content-Type: application/json
+
+        {
+            "assistant_response": "La phénoménologie est une approche philosophique...",
+            "language": "fr"
+        }
+
+        Response (202):
+        {
+            "job_id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "pending"
+        }
+
+    See Also:
+        - ``/chat/audio-status/<job_id>`` : Check generation status
+        - ``/chat/download-audio/<job_id>`` : Download completed audio
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return {"error": "No JSON data provided"}, 400
+
+        assistant_response = data.get("assistant_response")
+        language = data.get("language", "fr")
+
+        if not assistant_response:
+            return {"error": "assistant_response is required"}, 400
+
+        # Generate unique job ID
+        job_id = str(uuid.uuid4())
+
+        # Initialize job in pending state
+        tts_jobs[job_id] = {
+            "status": "pending",
+            "filepath": None,
+            "error": None,
+        }
+
+        # Launch background thread for audio generation
+        thread = threading.Thread(
+            target=_generate_audio_background,
+            args=(job_id, assistant_response, language),
+            daemon=True,
+        )
+        thread.start()
+
+        # Return job ID immediately
+        return {"job_id": job_id, "status": "pending"}, 202
+
+    except Exception as e:
+        return {"error": f"Failed to start TTS job: {str(e)}"}, 500
+
+
+@app.route("/chat/audio-status/<job_id>", methods=["GET"])
+def chat_audio_status(job_id: str) -> tuple[Dict[str, Any], int]:
+    """Check the status of a TTS audio generation job.
+
+    Args:
+        job_id: Unique identifier for the TTS job.
+
+    Returns:
+        JSON response with job status and 200 OK on success.
+        JSON error response with 404 status if job not found.
+
+    Status Values:
+        - "pending": Job created but not started yet
+        - "processing": Audio generation in progress
+        - "completed": Audio ready for download
+        - "failed": Generation failed (error message included)
+
+    Example:
+        GET /chat/audio-status/550e8400-e29b-41d4-a716-446655440000
+
+        Response (processing):
+        {
+            "job_id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "processing"
+        }
+
+        Response (completed):
+        {
+            "job_id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "completed",
+            "filename": "chat_audio_20250130_143045.wav"
+        }
+
+        Response (failed):
+        {
+            "job_id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "failed",
+            "error": "TTS generation failed: ..."
+        }
+    """
+    job = tts_jobs.get(job_id)
+
+    if not job:
+        return {"error": "Job not found"}, 404
+
+    response = {
+        "job_id": job_id,
+        "status": job["status"],
+    }
+
+    if job["status"] == "completed" and job["filepath"]:
+        response["filename"] = job["filepath"].name
+
+    if job["status"] == "failed" and job["error"]:
+        response["error"] = job["error"]
+
+    return response, 200
+
+
+@app.route("/chat/download-audio/<job_id>", methods=["GET"])
+def chat_download_audio(job_id: str) -> Union[WerkzeugResponse, tuple[Dict[str, Any], int]]:
+    """Download the generated audio file for a completed TTS job.
+
+    Args:
+        job_id: Unique identifier for the TTS job.
+
+    Returns:
+        Audio file download (.wav) if job completed successfully.
+        JSON error response with 404/400 status if job not found or not ready.
+
+    Example:
+        GET /chat/download-audio/550e8400-e29b-41d4-a716-446655440000
+
+        Response: chat_audio_20250130_143045.wav (download)
+    """
+    job = tts_jobs.get(job_id)
+
+    if not job:
+        return {"error": "Job not found"}, 404
+
+    if job["status"] != "completed":
+        return {"error": f"Job not ready (status: {job['status']})"}, 400
+
+    filepath = job["filepath"]
+
+    if not filepath or not filepath.exists():
+        return {"error": "Audio file not found"}, 404
+
+    # Send file as download
+    return send_from_directory(
+        directory=filepath.parent,
+        path=filepath.name,
+        as_attachment=True,
+        download_name=filepath.name,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -422,6 +422,15 @@
         }
     }
 
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
     .reformulation-header {
         display: flex;
         align-items: center;
@@ -1065,7 +1074,7 @@
 
                         // Add click handler for Audio export
                         exportAudioBtn.addEventListener('click', async () => {
-                            await exportToAudio(accumulatedText);
+                            await exportToAudio(accumulatedText, exportAudioBtn);
                         });
                     }
 
@@ -1379,9 +1388,24 @@
         }
     }
 
-    async function exportToAudio(assistantResponse) {
+    async function exportToAudio(assistantResponse, buttonElement) {
         try {
-            const response = await fetch('/chat/export-audio', {
+            // Save original button state
+            const originalHTML = buttonElement.innerHTML;
+            const originalDisabled = buttonElement.disabled;
+
+            // Update button to show loading state
+            buttonElement.disabled = true;
+            buttonElement.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="animation: spin 1s linear infinite;">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" opacity="0.25"/>
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2" fill="none"/>
+                </svg>
+                Génération...
+            `;
+
+            // Start async audio generation
+            const startResponse = await fetch('/chat/generate-audio', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1390,25 +1414,64 @@
                 })
             });
 
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'TTS failed');
+            if (!startResponse.ok) {
+                const error = await startResponse.json();
+                throw new Error(error.error || 'Failed to start TTS job');
             }
 
-            // Download file
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `chat_audio_${new Date().getTime()}.wav`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
+            const { job_id } = await startResponse.json();
+
+            // Poll for job status
+            const checkStatus = async () => {
+                const statusResponse = await fetch(`/chat/audio-status/${job_id}`);
+                if (!statusResponse.ok) {
+                    throw new Error('Failed to check TTS status');
+                }
+
+                const status = await statusResponse.json();
+
+                if (status.status === 'completed') {
+                    // Download the audio file
+                    const downloadUrl = `/chat/download-audio/${job_id}`;
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = status.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+
+                    // Restore button state
+                    buttonElement.innerHTML = originalHTML;
+                    buttonElement.disabled = originalDisabled;
+
+                } else if (status.status === 'failed') {
+                    throw new Error(status.error || 'TTS generation failed');
+
+                } else {
+                    // Still processing, check again in 1 second
+                    setTimeout(checkStatus, 1000);
+                }
+            };
+
+            // Start polling
+            await checkStatus();
 
         } catch (error) {
             console.error('TTS error:', error);
             alert(`Erreur TTS: ${error.message}`);
+
+            // Restore button state on error
+            if (buttonElement) {
+                buttonElement.disabled = false;
+                buttonElement.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                    </svg>
+                    Audio
+                `;
+            }
         }
     }
 
