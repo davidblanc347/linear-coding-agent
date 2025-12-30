@@ -56,11 +56,15 @@
             max-width: var(--max-content-width);
             margin: 0 auto;
             padding: 1.5rem 1.5rem;
+            padding-top: 90px; /* Espace pour le header fixe */
+            padding-left: calc(1rem + 48px + 1rem); /* Aligner avec le header */
         }
 
         @media (min-width: 992px) {
             .wrapper {
                 padding: 2.5rem 3rem;
+                padding-top: 90px; /* Conserver l'espace pour le header fixe */
+                padding-left: calc(1rem + 48px + 1rem); /* Aligner avec le header */
             }
         }
 
@@ -322,10 +326,15 @@
 
         /* Header */
         .site-header {
-            padding: 1.5rem 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 1.5rem 1.5rem;
+            padding-left: calc(1rem + 48px + 1rem); /* left menu (1rem) + width (48px) + marge (1rem) = 80px */
             border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-            margin-bottom: 1.5rem;
-            margin-left: 64px; /* Space for hamburger button */
+            background-color: var(--color-bg-main);
+            z-index: 100;
         }
 
         .site-title {
@@ -712,27 +721,26 @@
         </div>
     </nav>
 
-    <div class="wrapper">
-        <!-- Header -->
-        <header class="site-header">
-            <div class="header-inner">
-                <div>
-                    <a href="/" style="text-decoration: none;">
-                        <div class="site-title">Philosophia</div>
-                        <div class="site-subtitle">Visualiseur de base Weaviate</div>
-                    </a>
-                </div>
-                <nav class="nav-links">
-                    <a href="/" class="{{ 'active' if request.endpoint == 'index' else '' }}">Accueil</a>
-                    <a href="/passages" class="{{ 'active' if request.endpoint == 'passages' else '' }}">Passages</a>
-                    <a href="/search" class="{{ 'active' if request.endpoint == 'search' else '' }}">Recherche</a>
-                    <a href="/chat" class="{{ 'active' if request.endpoint == 'chat' else '' }}">Conversation</a>
-                    <a href="/upload" class="{{ 'active' if request.endpoint == 'upload' else '' }}">Parser PDF</a>
-                    <a href="/documents" class="{{ 'active' if request.endpoint == 'documents' else '' }}">Documents</a>
-                </nav>
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-inner">
+            <div>
+                <a href="/" style="text-decoration: none;">
+                    <div class="site-title">Philosophia</div>
+                </a>
             </div>
-        </header>
+            <nav class="nav-links">
+                <a href="/" class="{{ 'active' if request.endpoint == 'index' else '' }}">Accueil</a>
+                <a href="/passages" class="{{ 'active' if request.endpoint == 'passages' else '' }}">Passages</a>
+                <a href="/search" class="{{ 'active' if request.endpoint == 'search' else '' }}">Recherche</a>
+                <a href="/chat" class="{{ 'active' if request.endpoint == 'chat' else '' }}">Conversation</a>
+                <a href="/upload" class="{{ 'active' if request.endpoint == 'upload' else '' }}">Parser PDF</a>
+                <a href="/documents" class="{{ 'active' if request.endpoint == 'documents' else '' }}">Documents</a>
+            </nav>
+        </div>
+    </header>
 
+    <div class="wrapper">
         <!-- Main Content -->
         <main>
             {% block content %}{% endblock %}

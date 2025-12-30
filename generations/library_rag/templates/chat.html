@@ -18,9 +18,15 @@
         }
     }
 
-    /* Remove header margin for full-width layout */
+    /* Keep header fixed but adjust for chat full-width layout */
     .site-header {
-        margin-left: 0 !important;
+        padding-left: calc(1rem + 48px + 1rem) !important; /* Clear hamburger menu */
+    }
+
+    @media (min-width: 992px) {
+        .site-header {
+            padding-left: calc(1rem + 48px + 1rem) !important;
+        }
     }
 
     /* Chat-specific styles */
@@ -28,7 +34,7 @@
         display: grid;
         grid-template-columns: 60% 40%;
         gap: 1.5rem;
-        height: calc(100vh - 300px);
+        height: calc(100vh - 90px - 1.5rem);
         min-height: 600px;
         width: 100%;
     }
@@ -49,6 +55,7 @@
     .chat-main {
         display: flex;
         flex-direction: column;
+        height: 100%;
         background-color: rgba(255, 255, 255, 0.06);
         border-radius: 12px;
         border: 1px solid rgba(125, 110, 88, 0.25);
@@ -258,6 +265,7 @@
     .context-sidebar {
         display: flex;
         flex-direction: column;
+        height: 100%;
         background-color: rgba(255, 255, 255, 0.06);
         border-radius: 12px;
         border: 1px solid rgba(125, 110, 88, 0.25);
