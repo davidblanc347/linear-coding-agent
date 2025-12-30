@@ -239,71 +239,27 @@ def process_word(
             )
 
         # ================================================================
-        # STEP 5: LLM Metadata Extraction (REUSED)
+        # STEP 5: Metadata Extraction from Word (NO LLM NEEDED)
         # ================================================================
+        # Word documents have metadata in first lines (TITRE:, AUTEUR:, EDITION:)
+        # or in core properties. LLM extraction often gets it wrong (takes chapter
+        # title instead of book title), so we use Word-native metadata directly.
         metadata: Metadata
         cost_llm = 0.0
 
-        if use_llm:
-            from utils.llm_metadata import extract_metadata
+        raw_meta = content["metadata_raw"]
+        metadata = Metadata(
+            title=raw_meta.get("title") or doc_name,
+            author=raw_meta.get("author") or "Unknown",
+            year=raw_meta.get("created").year if raw_meta.get("created") else None,
+            language="en",  # Default to English, could be improved
+        )
 
-            callback("Metadata Extraction", "running", "Extracting metadata with LLM...")
-
-            try:
-                metadata_llm = extract_metadata(
-                    markdown_text,
-                    provider=llm_provider,
-                )
-
-                # Fallback to Word properties if LLM returns None
-                if metadata_llm is None:
-                    callback(
-                        "Metadata Extraction",
-                        "completed",
-                        "LLM extraction failed, using Word properties",
-                    )
-                    raw_meta = content["metadata_raw"]
-                    metadata = Metadata(
-                        title=raw_meta.get("title", doc_name),
-                        author=raw_meta.get("author", "Unknown"),
-                        year=raw_meta.get("created").year if raw_meta.get("created") else None,
-                        language=raw_meta.get("language", "unknown"),
-                    )
-                else:
-                    metadata = metadata_llm
-                    callback(
-                        "Metadata Extraction",
-                        "completed",
-                        f"Title: {metadata.get('title', '')[:50]}..., Author: {metadata.get('author', '')}",
-                    )
-            except Exception as e:
-                callback(
-                    "Metadata Extraction",
-                    "completed",
-                    f"LLM error ({str(e)}), using Word properties",
-                )
-                raw_meta = content["metadata_raw"]
-                metadata = Metadata(
-                    title=raw_meta.get("title", doc_name),
-                    author=raw_meta.get("author", "Unknown"),
-                    year=raw_meta.get("created").year if raw_meta.get("created") else None,
-                    language=raw_meta.get("language", "unknown"),
-                )
-        else:
-            # Use metadata from Word properties
-            raw_meta = content["metadata_raw"]
-            metadata = Metadata(
-                title=raw_meta.get("title", doc_name),
-                author=raw_meta.get("author", "Unknown"),
-                year=raw_meta.get("created").year if raw_meta.get("created") else None,
-                language=raw_meta.get("language", "unknown"),
-            )
-
-            callback(
-                "Metadata Extraction",
-                "completed",
-                "Using Word document properties",
-            )
+        callback(
+            "Metadata Extraction",
+            "completed",
+            f"Title: {metadata.get('title', '')[:50]}..., Author: {metadata.get('author', '')}",
+        )
 
         # ================================================================
         # STEP 6: Section Classification (REUSED)
@@ -452,26 +408,19 @@ def process_word(
             )
 
         # ================================================================
-        # STEP 9: Chunk Validation (REUSED)
+        # STEP 9: Chunk Validation (SKIP FOR WORD)
         # ================================================================
-        if use_llm:
-            from utils.llm_validator import enrich_chunks_with_concepts
-
-            callback("Chunk Validation", "running", "Enriching chunks with concepts...")
-
-            # Enrich chunks with keywords/concepts
-            enriched_chunks = enrich_chunks_with_concepts(
-                chunks,
-                provider=llm_provider,
-            )
-
-            chunks = enriched_chunks
-
-            callback(
-                "Chunk Validation",
-                "completed",
-                f"Validated {len(chunks)} chunks",
-            )
+        # NOTE: We skip LLM concept enrichment for Word documents because:
+        # 1. The LLM generates concepts in French even for English text
+        # 2. French accents cause Weaviate ingestion failures
+        # 3. Word documents already have clean structure, don't need LLM enhancement
+        #
+        # For production: could re-enable with language detection + prompt tuning
+        callback(
+            "Chunk Validation",
+            "completed",
+            f"Skipped (Word documents don't need LLM enrichment)",
+        )
 
         # ================================================================
         # STEP 10: Save Chunks JSON
