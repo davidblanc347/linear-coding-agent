@@ -3,6 +3,52 @@
 {% block title %}Recherche{% endblock %}
 
 {% block content %}
+<style>
+.section-group {
+    margin-bottom: 2rem;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.section-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid #007bff;
+}
+
+.summary-text {
+    margin: 0.5rem 0;
+    font-style: italic;
+    color: #555;
+    line-height: 1.5;
+}
+
+.concepts {
+    margin-top: 0.5rem;
+}
+
+.chunks-list {
+    margin-left: 1.5rem;
+    margin-top: 1rem;
+}
+
+.chunk-item {
+    background: white;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-left: 3px solid #007bff;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    transition: box-shadow 0.2s ease;
+}
+
+.chunk-item:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+</style>
 <section class="section">
     <h1>🔍 Recherche sémantique</h1>
     <p class="lead">Posez une question en langage naturel pour trouver des passages pertinents</p>
@@ -54,6 +100,25 @@
                     </select>
                 </div>
             </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="sections_limit">Sections (hiérarchique)</label>
+                    <select name="sections_limit" id="sections_limit" class="form-control">
+                        <option value="3" {{ 'selected' if sections_limit == 3 else '' }}>3 sections</option>
+                        <option value="5" {{ 'selected' if sections_limit == 5 else '' }}>5 sections</option>
+                        <option value="10" {{ 'selected' if sections_limit == 10 else '' }}>10 sections</option>
+                        <option value="20" {{ 'selected' if sections_limit == 20 else '' }}>20 sections</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="mode">Mode de recherche</label>
+                    <select name="mode" id="mode" class="form-control">
+                        <option value="" {{ 'selected' if not mode else '' }}>🤖 Auto-détection</option>
+                        <option value="simple" {{ 'selected' if mode == 'simple' else '' }}>📄 Simple (1-étape)</option>
+                        <option value="hierarchical" {{ 'selected' if mode == 'hierarchical' else '' }}>🌳 Hiérarchique (2-étapes)</option>
+                    </select>
+                </div>
+            </div>
             <div class="mt-2">
                 <button type="submit" class="btn btn-primary">Rechercher</button>
                 <a href="/search" class="btn" style="margin-left: 0.5rem;">Réinitialiser</a>
@@ -64,22 +129,91 @@
     <!-- Results -->
     {% if query %}
         <div class="ornament">·</div>
-        
-        {% if results %}
-            <div class="mb-3">
-                <strong>{{ results | length }}</strong> passage{% if results | length > 1 %}s{% endif %} trouvé{% if results | length > 1 %}s{% endif %}
+
+        {% if results_data and results_data.results %}
+            <!-- Mode indicator and stats -->
+            <div class="mb-3" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                <div>
+                    <strong>{{ results_data.total_chunks }}</strong> passage{% if results_data.total_chunks > 1 %}s{% endif %} trouvé{% if results_data.total_chunks > 1 %}s{% endif %}
+                </div>
+                <div>
+                    {% if results_data.mode == "hierarchical" %}
+                        <span class="badge" style="background-color: #28a745; color: white; font-size: 0.9em;">
+                            🌳 Recherche hiérarchique ({{ results_data.sections|length }} sections)
+                        </span>
+                    {% else %}
+                        <span class="badge" style="background-color: #6c757d; color: white; font-size: 0.9em;">
+                            📄 Recherche simple
+                        </span>
+                    {% endif %}
+                </div>
                 {% if author_filter or work_filter %}
-                    <span class="text-muted">—</span>
-                    {% if author_filter %}
-                        <span class="badge badge-author">{{ author_filter }}</span>
-                    {% endif %}
-                    {% if work_filter %}
-                        <span class="badge badge-work">{{ work_filter }}</span>
-                    {% endif %}
+                    <div style="flex-grow: 1;"></div>
+                    <div>
+                        {% if author_filter %}
+                            <span class="badge badge-author">{{ author_filter }}</span>
+                        {% endif %}
+                        {% if work_filter %}
+                            <span class="badge badge-work">{{ work_filter }}</span>
+                        {% endif %}
+                    </div>
                 {% endif %}
             </div>
 
-            {% for result in results %}
+            <!-- Hierarchical display -->
+            {% if results_data.mode == "hierarchical" and results_data.sections %}
+                {% for section in results_data.sections %}
+                    <div class="section-group">
+                        <div class="section-header">
+                            <h3 style="margin: 0 0 0.5rem 0; font-size: 1.3em;">
+                                📂 {{ section.title }}
+                                <span class="badge" style="background-color: #007bff; color: white; margin-left: 0.5rem;">{{ section.chunks_count }} passage{% if section.chunks_count > 1 %}s{% endif %}</span>
+                                <span class="badge badge-success" style="margin-left: 0.5rem;">⚡ {{ section.similarity }}% similaire</span>
+                            </h3>
+                            <p class="text-muted" style="margin: 0.25rem 0; font-size: 0.9em;">{{ section.section_path }}</p>
+                            {% if section.summary_text %}
+                                <p class="summary-text" style="margin: 0.5rem 0; font-style: italic; color: #555;">{{ section.summary_text }}</p>
+                            {% endif %}
+                            {% if section.concepts %}
+                                <div class="concepts" style="margin-top: 0.5rem;">
+                                    {% for concept in section.concepts %}
+                                        <span class="badge badge-info" style="margin-right: 0.25rem;">{{ concept }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Chunks within this section -->
+                        {% if section.chunks %}
+                            <div class="chunks-list" style="margin-left: 1.5rem; margin-top: 1rem;">
+                                {% for chunk in section.chunks %}
+                                    <div class="chunk-item" style="background: white; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid #007bff; border-radius: 4px;">
+                                        <div style="margin-bottom: 0.5rem;">
+                                            <span class="badge badge-success">⚡ {{ chunk.similarity }}% similaire</span>
+                                        </div>
+                                        <div class="passage-text" style="margin-bottom: 0.5rem;">"{{ chunk.text }}"</div>
+                                        <div class="passage-meta" style="font-size: 0.85em; color: #666;">
+                                            <strong>Type :</strong> {{ chunk.unitType or '—' }} &nbsp;│&nbsp;
+                                            <strong>Langue :</strong> {{ (chunk.language or '—') | upper }} &nbsp;│&nbsp;
+                                            <strong>Index :</strong> {{ chunk.orderIndex or '—' }}
+                                        </div>
+                                        {% if chunk.keywords %}
+                                            <div style="margin-top: 0.5rem;">
+                                                {% for kw in chunk.keywords %}
+                                                    <span class="keyword-tag">{{ kw }}</span>
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+
+            <!-- Simple display (original) -->
+            {% else %}
+                {% for result in results_data.results %}
                 <div class="passage-card">
                     <div class="passage-header">
                         <div>
@@ -105,6 +239,7 @@
                     {% endif %}
                 </div>
             {% endfor %}
+            {% endif %}
         {% else %}
             <div class="empty-state">
                 <div class="empty-state-icon">🔮</div>

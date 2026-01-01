@@ -228,13 +228,13 @@ def get_all_passages(
         return []
 
 
-def search_passages(
+def simple_search(
     query: str,
     limit: int = 10,
     author_filter: Optional[str] = None,
     work_filter: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Semantic search on passages using vector similarity.
+    """Single-stage semantic search on Chunk collection (original implementation).
 
     Args:
         query: Search query text.
@@ -283,6 +283,315 @@ def search_passages(
     except Exception as e:
         print(f"Erreur recherche: {e}")
         return []
+
+
+def hierarchical_search(
+    query: str,
+    limit: int = 10,
+    author_filter: Optional[str] = None,
+    work_filter: Optional[str] = None,
+    sections_limit: int = 5,
+) -> Dict[str, Any]:
+    """Two-stage hierarchical semantic search: Summary → Chunks.
+
+    Stage 1: Find top-N relevant sections via Summary collection.
+    Stage 2: Search chunks within those sections for better precision.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of chunks to return per section.
+        author_filter: Filter by author name.
+        work_filter: Filter by work title.
+        sections_limit: Number of top sections to retrieve (default: 5).
+
+    Returns:
+        Dictionary with hierarchical search results:
+        - mode: "hierarchical"
+        - sections: List of section dictionaries with nested chunks
+        - results: Flat list of all chunks (for compatibility)
+        - total_chunks: Total number of chunks found
+    """
+    try:
+        with get_weaviate_client() as client:
+            if client is None:
+                # Fallback to simple search
+                results = simple_search(query, limit, author_filter, work_filter)
+                return {
+                    "mode": "simple",
+                    "results": results,
+                    "total_chunks": len(results),
+                }
+
+            # ═══════════════════════════════════════════════════════════════
+            # STAGE 1: Search Summary collection for relevant sections
+            # ═══════════════════════════════════════════════════════════════
+
+            summary_collection = client.collections.get("Summary")
+
+            summaries_result = summary_collection.query.near_text(
+                query=query,
+                limit=sections_limit,
+                return_metadata=wvq.MetadataQuery(distance=True),
+                return_properties=[
+                    "sectionPath", "title", "text", "level", "concepts", "document"
+                ],
+            )
+
+            if not summaries_result.objects:
+                # No summaries found, fallback to simple search
+                results = simple_search(query, limit, author_filter, work_filter)
+                return {
+                    "mode": "simple",
+                    "results": results,
+                    "total_chunks": len(results),
+                }
+
+            # Extract section data
+            sections_data = []
+            for summary_obj in summaries_result.objects:
+                props = summary_obj.properties
+                doc_obj = props.get("document", {}) if props.get("document") else {}
+
+                sections_data.append({
+                    "section_path": props.get("sectionPath", ""),
+                    "title": props.get("title", ""),
+                    "summary_text": props.get("text", ""),
+                    "level": props.get("level", 1),
+                    "concepts": props.get("concepts", []),
+                    "document_source_id": doc_obj.get("sourceId", "") if isinstance(doc_obj, dict) else "",
+                    "similarity": round((1 - summary_obj.metadata.distance) * 100, 1) if summary_obj.metadata and summary_obj.metadata.distance else 0,
+                })
+
+            # Post-filter sections by author/work (Summary doesn't have work nested object)
+            if author_filter or work_filter:
+                doc_collection = client.collections.get("Document")
+                filtered_sections = []
+
+                for section in sections_data:
+                    source_id = section["document_source_id"]
+                    if not source_id:
+                        continue
+
+                    # Query Document to get work metadata
+                    doc_result = doc_collection.query.fetch_objects(
+                        filters=wvq.Filter.by_property("sourceId").equal(source_id),
+                        limit=1,
+                        return_properties=["work"],
+                    )
+
+                    if doc_result.objects:
+                        doc_work = doc_result.objects[0].properties.get("work", {})
+                        if isinstance(doc_work, dict):
+                            # Check filters
+                            if author_filter and doc_work.get("author") != author_filter:
+                                continue
+                            if work_filter and doc_work.get("title") != work_filter:
+                                continue
+
+                        filtered_sections.append(section)
+
+                sections_data = filtered_sections
+
+            if not sections_data:
+                # No sections match filters, fallback to simple search
+                results = simple_search(query, limit, author_filter, work_filter)
+                return {
+                    "mode": "simple",
+                    "results": results,
+                    "total_chunks": len(results),
+                }
+
+            # ═══════════════════════════════════════════════════════════════
+            # STAGE 2: Search Chunk collection filtered by sections
+            # ═══════════════════════════════════════════════════════════════
+
+            chunk_collection = client.collections.get("Chunk")
+            all_chunks = []
+
+            for section in sections_data:
+                section_path = section["section_path"]
+
+                # Build filters
+                filters: Optional[Any] = wvq.Filter.by_property("sectionPath").equal(section_path)
+
+                if author_filter:
+                    author_filter_obj = wvq.Filter.by_property("workAuthor").equal(author_filter)
+                    filters = filters & author_filter_obj
+
+                if work_filter:
+                    work_filter_obj = wvq.Filter.by_property("workTitle").equal(work_filter)
+                    filters = filters & work_filter_obj
+
+                # Search chunks in this section
+                chunks_result = chunk_collection.query.near_text(
+                    query=query,
+                    limit=limit,
+                    filters=filters,
+                    return_metadata=wvq.MetadataQuery(distance=True),
+                    return_properties=[
+                        "text", "sectionPath", "sectionLevel", "chapterTitle",
+                        "canonicalReference", "unitType", "keywords", "orderIndex", "language"
+                    ],
+                )
+
+                # Add chunks to section
+                section_chunks = [
+                    {
+                        "uuid": str(obj.uuid),
+                        "distance": obj.metadata.distance if obj.metadata else None,
+                        "similarity": round((1 - obj.metadata.distance) * 100, 1) if obj.metadata and obj.metadata.distance else None,
+                        **obj.properties
+                    }
+                    for obj in chunks_result.objects
+                ]
+
+                section["chunks"] = section_chunks
+                section["chunks_count"] = len(section_chunks)
+                all_chunks.extend(section_chunks)
+
+            # Sort all chunks by similarity (descending)
+            all_chunks.sort(key=lambda x: x.get("similarity", 0) or 0, reverse=True)
+
+            return {
+                "mode": "hierarchical",
+                "sections": sections_data,
+                "results": all_chunks,
+                "total_chunks": len(all_chunks),
+            }
+
+    except Exception as e:
+        print(f"Erreur recherche hiérarchique: {e}")
+        # Fallback to simple search on error
+        results = simple_search(query, limit, author_filter, work_filter)
+        return {
+            "mode": "simple",
+            "results": results,
+            "total_chunks": len(results),
+        }
+
+
+def should_use_hierarchical_search(query: str) -> bool:
+    """Detect if a query would benefit from hierarchical 2-stage search.
+
+    Hierarchical search is recommended for:
+    - Long queries (≥15 characters) indicating complex questions
+    - Multi-concept queries (2+ significant words)
+    - Queries with logical connectors (et, ou, mais, donc, car)
+
+    Args:
+        query: Search query text.
+
+    Returns:
+        True if hierarchical search is recommended, False for simple search.
+
+    Examples:
+        >>> should_use_hierarchical_search("justice")
+        False  # Short query, single concept
+        >>> should_use_hierarchical_search("Qu'est-ce que la justice selon Platon ?")
+        True  # Long query, multi-concept, philosophical question
+        >>> should_use_hierarchical_search("vertu et sagesse")
+        True  # Multi-concept with connector
+    """
+    if not query or len(query.strip()) == 0:
+        return False
+
+    query_lower = query.lower().strip()
+
+    # Criterion 1: Long queries (≥15 chars) suggest complexity
+    if len(query_lower) >= 15:
+        return True
+
+    # Criterion 2: Presence of logical connectors
+    connectors = ["et", "ou", "mais", "donc", "car", "parce que", "puisque", "si"]
+    if any(f" {connector} " in f" {query_lower} " for connector in connectors):
+        return True
+
+    # Criterion 3: Multi-concept (2+ significant words, excluding stop words)
+    stop_words = {
+        "le", "la", "les", "un", "une", "des", "du", "de", "d",
+        "ce", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes",
+        "à", "au", "aux", "dans", "sur", "pour", "par", "avec",
+        "que", "qui", "quoi", "dont", "où", "est", "sont", "a",
+        "qu", "c", "l", "s", "n", "m", "t", "j", "y",
+    }
+
+    words = query_lower.split()
+    significant_words = [w for w in words if len(w) > 2 and w not in stop_words]
+
+    if len(significant_words) >= 2:
+        return True
+
+    # Default: use simple search for short, single-concept queries
+    return False
+
+
+def search_passages(
+    query: str,
+    limit: int = 10,
+    author_filter: Optional[str] = None,
+    work_filter: Optional[str] = None,
+    sections_limit: int = 5,
+    force_mode: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Intelligent semantic search dispatcher with auto-detection.
+
+    Automatically chooses between simple (1-stage) and hierarchical (2-stage)
+    search based on query complexity. Complex queries use hierarchical search
+    for better precision and context.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of chunks to return (per section if hierarchical).
+        author_filter: Filter by author name (uses workAuthor property).
+        work_filter: Filter by work title (uses workTitle property).
+        sections_limit: Number of top sections for hierarchical search (default: 5).
+        force_mode: Force search mode ("simple", "hierarchical", or None for auto).
+
+    Returns:
+        Dictionary with search results:
+        - mode: "simple" or "hierarchical"
+        - results: List of passage dictionaries (flat)
+        - sections: List of section dicts with nested chunks (hierarchical only)
+        - total_chunks: Total number of chunks found
+
+    Examples:
+        >>> # Short query → auto-detects simple search
+        >>> search_passages("justice", limit=10)
+        {"mode": "simple", "results": [...], "total_chunks": 10}
+
+        >>> # Complex query → auto-detects hierarchical search
+        >>> search_passages("Qu'est-ce que la vertu selon Aristote ?", limit=5)
+        {"mode": "hierarchical", "sections": [...], "results": [...], "total_chunks": 15}
+
+        >>> # Force hierarchical mode
+        >>> search_passages("justice", force_mode="hierarchical", sections_limit=3)
+        {"mode": "hierarchical", ...}
+    """
+    # Determine search mode
+    if force_mode == "simple":
+        use_hierarchical = False
+    elif force_mode == "hierarchical":
+        use_hierarchical = True
+    else:
+        # Auto-detection
+        use_hierarchical = should_use_hierarchical_search(query)
+
+    # Execute appropriate search strategy
+    if use_hierarchical:
+        return hierarchical_search(
+            query=query,
+            limit=limit,
+            author_filter=author_filter,
+            work_filter=work_filter,
+            sections_limit=sections_limit,
+        )
+    else:
+        results = simple_search(query, limit, author_filter, work_filter)
+        return {
+            "mode": "simple",
+            "results": results,
+            "total_chunks": len(results),
+        }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -377,9 +686,11 @@ def search() -> str:
 
     Query Parameters:
         q (str): Search query text. Empty string shows no results.
-        limit (int): Maximum number of results to return. Defaults to 10.
+        limit (int): Maximum number of chunks per section. Defaults to 10.
         author (str, optional): Filter results by author name.
         work (str, optional): Filter results by work title.
+        sections_limit (int): Number of sections for hierarchical search. Defaults to 5.
+        mode (str, optional): Force search mode ("simple", "hierarchical", or "" for auto).
 
     Returns:
         Rendered HTML template (search.html) with:
@@ -387,41 +698,49 @@ def search() -> str:
         - List of matching passages with similarity percentages
         - Collection statistics for filter dropdowns
         - Current filter state
+        - Search mode indicator (simple vs hierarchical)
 
     Example:
-        GET /search?q=la%20mort%20et%20le%20temps&limit=5&author=Heidegger
-        Returns top 5 semantically similar passages about death and time
-        by Heidegger.
+        GET /search?q=la%20mort%20et%20le%20temps&limit=5&sections_limit=3
+        Auto-detects hierarchical search, returns top 3 sections with 5 chunks each.
     """
     query: str = request.args.get("q", "")
     limit: int = request.args.get("limit", 10, type=int)
     author: Optional[str] = request.args.get("author", None)
     work: Optional[str] = request.args.get("work", None)
+    sections_limit: int = request.args.get("sections_limit", 5, type=int)
+    mode: Optional[str] = request.args.get("mode", None)
 
     # Clean filters
     if author == "":
         author = None
     if work == "":
         work = None
+    if mode == "":
+        mode = None
 
     from utils.types import CollectionStats
     stats: Optional[CollectionStats] = get_collection_stats()
-    results: List[Dict[str, Any]] = []
+    results_data: Optional[Dict[str, Any]] = None
 
     if query:
-        results = search_passages(
+        results_data = search_passages(
             query=query,
             limit=limit,
             author_filter=author,
             work_filter=work,
+            sections_limit=sections_limit,
+            force_mode=mode,
         )
 
     return render_template(
         "search.html",
         query=query,
-        results=results,
+        results_data=results_data,
         stats=stats,
         limit=limit,
+        sections_limit=sections_limit,
+        mode=mode,
         author_filter=author,
         work_filter=work,
     )
