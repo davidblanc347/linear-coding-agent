@@ -178,11 +178,13 @@
                     <div class="section-group">
                         <div class="section-header">
                             <h3 style="margin: 0 0 0.5rem 0; font-size: 1.3em;">
-                                📂 {{ section.title }}
+                                📂 {{ section.title[:80] }}{% if section.title|length > 80 %}...{% endif %}
                                 <span class="badge" style="background-color: var(--color-accent-alt); color: white; margin-left: 0.5rem;">{{ section.chunks_count }} passage{% if section.chunks_count > 1 %}s{% endif %}</span>
                                 <span class="badge badge-similarity" style="margin-left: 0.5rem;">⚡ {{ section.similarity }}% similaire</span>
                             </h3>
-                            <p class="text-muted" style="margin: 0.25rem 0; font-size: 0.9em;">📍 {{ section.section_path }}</p>
+                            {% if section.section_path and section.section_path != section.title %}
+                                <p class="text-muted" style="margin: 0.25rem 0; font-size: 0.9em;">📍 {{ section.section_path }}</p>
+                            {% endif %}
                             {% if section.summary_text %}
                                 <p class="summary-text" style="margin: 0.5rem 0; font-style: italic; color: #555;">{{ section.summary_text }}</p>
                             {% endif %}

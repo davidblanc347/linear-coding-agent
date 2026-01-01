@@ -442,15 +442,12 @@ def hierarchical_search(
                     filters = filters & work_filter_obj
 
                 # Search chunks in this section
+                # Note: Don't specify return_properties to get nested objects (work, document)
                 chunks_result = chunk_collection.query.near_text(
                     query=query,
                     limit=limit,
                     filters=filters,
                     return_metadata=wvq.MetadataQuery(distance=True),
-                    return_properties=[
-                        "text", "sectionPath", "sectionLevel", "chapterTitle",
-                        "canonicalReference", "unitType", "keywords", "orderIndex", "language"
-                    ],
                 )
 
                 # Add chunks to section
