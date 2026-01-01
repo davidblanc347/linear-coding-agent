@@ -132,7 +132,10 @@ def get_weaviate_client() -> Generator[Optional[weaviate.WeaviateClient], None, 
         yield None
     finally:
         if client:
-            client.close()
+            try:
+                client.close()
+            except Exception as e:
+                print(f"Erreur fermeture client Weaviate: {e}")
 
 
 def get_collection_stats() -> Optional[CollectionStats]:
@@ -314,21 +317,18 @@ def hierarchical_search(
         - total_chunks: Total number of chunks found
         - fallback_reason: Explanation if forced but 0 results (optional)
     """
-    try:
-        with get_weaviate_client() as client:
-            if client is None:
-                # Return early if forced, otherwise signal fallback
-                if force_hierarchical:
-                    return {
-                        "mode": "hierarchical",
-                        "sections": [],
-                        "results": [],
-                        "total_chunks": 0,
-                        "fallback_reason": "Weaviate client unavailable",
-                    }
-                # Set flag to fallback outside context manager
-                raise ValueError("FALLBACK_TO_SIMPLE")
+    with get_weaviate_client() as client:
+        if client is None:
+            # Return empty result - let caller decide fallback
+            return {
+                "mode": "hierarchical" if force_hierarchical else "error",
+                "sections": [],
+                "results": [],
+                "total_chunks": 0,
+                "fallback_reason": "Weaviate client unavailable",
+            }
 
+        try:
             # ═══════════════════════════════════════════════════════════════
             # STAGE 1: Search Summary collection for relevant sections
             # ═══════════════════════════════════════════════════════════════
@@ -345,18 +345,14 @@ def hierarchical_search(
             )
 
             if not summaries_result.objects:
-                # No summaries found
-                if force_hierarchical:
-                    # Forced hierarchical: return empty hierarchical result
-                    return {
-                        "mode": "hierarchical",
-                        "sections": [],
-                        "results": [],
-                        "total_chunks": 0,
-                        "fallback_reason": f"Aucune section pertinente trouvée (0/{sections_limit} summaries)",
-                    }
-                # Signal fallback outside context manager
-                raise ValueError("FALLBACK_TO_SIMPLE")
+                # No summaries found - return empty result
+                return {
+                    "mode": "hierarchical" if force_hierarchical else "error",
+                    "sections": [],
+                    "results": [],
+                    "total_chunks": 0,
+                    "fallback_reason": f"Aucune section pertinente trouvée (0/{sections_limit} summaries)",
+                }
 
             # Extract section data
             sections_data = []
@@ -405,21 +401,17 @@ def hierarchical_search(
                 sections_data = filtered_sections
 
             if not sections_data:
-                # No sections match filters
-                if force_hierarchical:
-                    # Forced hierarchical: return empty hierarchical result
-                    filters_str = f"author={author_filter}" if author_filter else ""
-                    if work_filter:
-                        filters_str += f", work={work_filter}" if filters_str else f"work={work_filter}"
-                    return {
-                        "mode": "hierarchical",
-                        "sections": [],
-                        "results": [],
-                        "total_chunks": 0,
-                        "fallback_reason": f"Aucune section ne correspond aux filtres ({filters_str})",
-                    }
-                # Signal fallback outside context manager
-                raise ValueError("FALLBACK_TO_SIMPLE")
+                # No sections match filters - return empty result
+                filters_str = f"author={author_filter}" if author_filter else ""
+                if work_filter:
+                    filters_str += f", work={work_filter}" if filters_str else f"work={work_filter}"
+                return {
+                    "mode": "hierarchical" if force_hierarchical else "error",
+                    "sections": [],
+                    "results": [],
+                    "total_chunks": 0,
+                    "fallback_reason": f"Aucune section ne correspond aux filtres ({filters_str})",
+                }
 
             # ═══════════════════════════════════════════════════════════════
             # STAGE 2: Search Chunk collection filtered by sections
@@ -479,32 +471,20 @@ def hierarchical_search(
                 "total_chunks": len(all_chunks),
             }
 
-    except ValueError as e:
-        # Check if this is our fallback signal
-        if str(e) == "FALLBACK_TO_SIMPLE":
-            # Fallback to simple search (outside context manager)
-            results = simple_search(query, limit, author_filter, work_filter)
-            return {
-                "mode": "simple",
-                "results": results,
-                "total_chunks": len(results),
-            }
-        # Re-raise if not our signal
-        raise
-    except Exception as e:
-        print(f"Erreur recherche hiérarchique: {e}")
-        import traceback
-        traceback.print_exc()
+        except Exception as e:
+            # Handle errors within the try block (inside 'with')
+            print(f"Erreur recherche hiérarchique: {e}")
+            import traceback
+            traceback.print_exc()
 
-        # CRITICAL: Never call simple_search() here - we're still cleaning up the context manager!
-        # Instead, return empty result and let the caller decide if they want to retry
-        return {
-            "mode": "hierarchical" if force_hierarchical else "simple",
-            "sections": [],
-            "results": [],
-            "total_chunks": 0,
-            "fallback_reason": f"Erreur lors de la recherche: {str(e)}",
-        }
+            # Return empty result (don't call simple_search here!)
+            return {
+                "mode": "hierarchical" if force_hierarchical else "error",
+                "sections": [],
+                "results": [],
+                "total_chunks": 0,
+                "fallback_reason": f"Erreur lors de la recherche: {str(e)}",
+            }
 
 
 def should_use_hierarchical_search(query: str) -> bool:
@@ -615,7 +595,7 @@ def search_passages(
 
     # Execute appropriate search strategy
     if use_hierarchical:
-        return hierarchical_search(
+        result = hierarchical_search(
             query=query,
             limit=limit,
             author_filter=author_filter,
@@ -623,6 +603,17 @@ def search_passages(
             sections_limit=sections_limit,
             force_hierarchical=(force_mode == "hierarchical"),  # No fallback if explicitly forced
         )
+
+        # If hierarchical search failed and wasn't forced, fallback to simple search
+        if result.get("mode") == "error" and force_mode != "hierarchical":
+            results = simple_search(query, limit, author_filter, work_filter)
+            return {
+                "mode": "simple",
+                "results": results,
+                "total_chunks": len(results),
+            }
+
+        return result
     else:
         results = simple_search(query, limit, author_filter, work_filter)
         return {
