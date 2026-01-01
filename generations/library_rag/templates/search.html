@@ -184,7 +184,7 @@
                                     <strong>{{ section.title[:80] }}{% if section.title|length > 80 %}...{% endif %}</strong>
                                     <span class="badge badge-similarity">⚡ {{ section.similarity }}% similaire</span>
                                 </div>
-                                {% if section.summary_text %}
+                                {% if section.summary_text and section.summary_text != section.title and section.summary_text != section.section_path %}
                                     <p style="margin: 0; font-size: 0.9em; color: var(--color-text-main); font-style: italic;">{{ section.summary_text[:150] }}{% if section.summary_text|length > 150 %}...{% endif %}</p>
                                 {% endif %}
                                 {% if section.concepts %}
