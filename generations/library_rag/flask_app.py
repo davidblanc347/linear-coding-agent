@@ -340,7 +340,7 @@ def hierarchical_search(
                 limit=sections_limit,
                 return_metadata=wvq.MetadataQuery(distance=True),
                 return_properties=[
-                    "sectionPath", "title", "text", "level", "concepts", "document"
+                    "sectionPath", "title", "text", "level", "concepts"
                 ],
             )
 
@@ -358,7 +358,12 @@ def hierarchical_search(
             sections_data = []
             for summary_obj in summaries_result.objects:
                 props = summary_obj.properties
-                doc_obj = props.get("document", {}) if props.get("document") else {}
+
+                # Try to get document.sourceId if available (nested object might still be returned)
+                doc_obj = props.get("document")
+                source_id = ""
+                if doc_obj and isinstance(doc_obj, dict):
+                    source_id = doc_obj.get("sourceId", "")
 
                 sections_data.append({
                     "section_path": props.get("sectionPath", ""),
@@ -366,7 +371,8 @@ def hierarchical_search(
                     "summary_text": props.get("text", ""),
                     "level": props.get("level", 1),
                     "concepts": props.get("concepts", []),
-                    "document_source_id": doc_obj.get("sourceId", "") if isinstance(doc_obj, dict) else "",
+                    "document_source_id": source_id,
+                    "summary_uuid": str(summary_obj.uuid),  # Keep UUID for later retrieval if needed
                     "similarity": round((1 - summary_obj.metadata.distance) * 100, 1) if summary_obj.metadata and summary_obj.metadata.distance else 0,
                 })
 
@@ -381,10 +387,11 @@ def hierarchical_search(
                         continue
 
                     # Query Document to get work metadata
+                    # Note: 'work' is a nested object, so we don't specify it in return_properties
+                    # Weaviate should return it automatically
                     doc_result = doc_collection.query.fetch_objects(
                         filters=wvq.Filter.by_property("sourceId").equal(source_id),
                         limit=1,
-                        return_properties=["work"],
                     )
 
                     if doc_result.objects:
