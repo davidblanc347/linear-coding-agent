@@ -291,6 +291,7 @@ def hierarchical_search(
     author_filter: Optional[str] = None,
     work_filter: Optional[str] = None,
     sections_limit: int = 5,
+    force_hierarchical: bool = False,
 ) -> Dict[str, Any]:
     """Two-stage hierarchical semantic search: Summary → Chunks.
 
@@ -303,6 +304,7 @@ def hierarchical_search(
         author_filter: Filter by author name.
         work_filter: Filter by work title.
         sections_limit: Number of top sections to retrieve (default: 5).
+        force_hierarchical: If True, never fallback to simple search (for testing).
 
     Returns:
         Dictionary with hierarchical search results:
@@ -310,17 +312,28 @@ def hierarchical_search(
         - sections: List of section dictionaries with nested chunks
         - results: Flat list of all chunks (for compatibility)
         - total_chunks: Total number of chunks found
+        - fallback_reason: Explanation if forced but 0 results (optional)
     """
     try:
         with get_weaviate_client() as client:
             if client is None:
-                # Fallback to simple search
-                results = simple_search(query, limit, author_filter, work_filter)
-                return {
-                    "mode": "simple",
-                    "results": results,
-                    "total_chunks": len(results),
-                }
+                # Fallback to simple search only if not forced
+                if not force_hierarchical:
+                    results = simple_search(query, limit, author_filter, work_filter)
+                    return {
+                        "mode": "simple",
+                        "results": results,
+                        "total_chunks": len(results),
+                    }
+                else:
+                    # Forced hierarchical with no client
+                    return {
+                        "mode": "hierarchical",
+                        "sections": [],
+                        "results": [],
+                        "total_chunks": 0,
+                        "fallback_reason": "Weaviate client unavailable",
+                    }
 
             # ═══════════════════════════════════════════════════════════════
             # STAGE 1: Search Summary collection for relevant sections
@@ -338,13 +351,24 @@ def hierarchical_search(
             )
 
             if not summaries_result.objects:
-                # No summaries found, fallback to simple search
-                results = simple_search(query, limit, author_filter, work_filter)
-                return {
-                    "mode": "simple",
-                    "results": results,
-                    "total_chunks": len(results),
-                }
+                # No summaries found
+                if not force_hierarchical:
+                    # Auto-detection: fallback to simple search
+                    results = simple_search(query, limit, author_filter, work_filter)
+                    return {
+                        "mode": "simple",
+                        "results": results,
+                        "total_chunks": len(results),
+                    }
+                else:
+                    # Forced hierarchical: return empty hierarchical result
+                    return {
+                        "mode": "hierarchical",
+                        "sections": [],
+                        "results": [],
+                        "total_chunks": 0,
+                        "fallback_reason": f"Aucune section pertinente trouvée (0/{sections_limit} summaries)",
+                    }
 
             # Extract section data
             sections_data = []
@@ -393,13 +417,27 @@ def hierarchical_search(
                 sections_data = filtered_sections
 
             if not sections_data:
-                # No sections match filters, fallback to simple search
-                results = simple_search(query, limit, author_filter, work_filter)
-                return {
-                    "mode": "simple",
-                    "results": results,
-                    "total_chunks": len(results),
-                }
+                # No sections match filters
+                if not force_hierarchical:
+                    # Auto-detection: fallback to simple search
+                    results = simple_search(query, limit, author_filter, work_filter)
+                    return {
+                        "mode": "simple",
+                        "results": results,
+                        "total_chunks": len(results),
+                    }
+                else:
+                    # Forced hierarchical: return empty hierarchical result
+                    filters_str = f"author={author_filter}" if author_filter else ""
+                    if work_filter:
+                        filters_str += f", work={work_filter}" if filters_str else f"work={work_filter}"
+                    return {
+                        "mode": "hierarchical",
+                        "sections": [],
+                        "results": [],
+                        "total_chunks": 0,
+                        "fallback_reason": f"Aucune section ne correspond aux filtres ({filters_str})",
+                    }
 
             # ═══════════════════════════════════════════════════════════════
             # STAGE 2: Search Chunk collection filtered by sections
@@ -461,13 +499,23 @@ def hierarchical_search(
 
     except Exception as e:
         print(f"Erreur recherche hiérarchique: {e}")
-        # Fallback to simple search on error
-        results = simple_search(query, limit, author_filter, work_filter)
-        return {
-            "mode": "simple",
-            "results": results,
-            "total_chunks": len(results),
-        }
+        # Fallback to simple search on error (unless forced)
+        if not force_hierarchical:
+            results = simple_search(query, limit, author_filter, work_filter)
+            return {
+                "mode": "simple",
+                "results": results,
+                "total_chunks": len(results),
+            }
+        else:
+            # Forced hierarchical: return error in hierarchical format
+            return {
+                "mode": "hierarchical",
+                "sections": [],
+                "results": [],
+                "total_chunks": 0,
+                "fallback_reason": f"Erreur lors de la recherche hiérarchique: {str(e)}",
+            }
 
 
 def should_use_hierarchical_search(query: str) -> bool:
@@ -584,6 +632,7 @@ def search_passages(
             author_filter=author_filter,
             work_filter=work_filter,
             sections_limit=sections_limit,
+            force_hierarchical=(force_mode == "hierarchical"),  # No fallback if explicitly forced
         )
     else:
         results = simple_search(query, limit, author_filter, work_filter)

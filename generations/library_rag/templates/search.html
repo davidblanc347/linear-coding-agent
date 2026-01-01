@@ -130,7 +130,7 @@
     {% if query %}
         <div class="ornament">·</div>
 
-        {% if results_data and results_data.results %}
+        {% if results_data %}
             <!-- Mode indicator and stats -->
             <div class="mb-3" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
                 <div>
@@ -159,6 +159,17 @@
                     </div>
                 {% endif %}
             </div>
+
+            <!-- Fallback reason warning (when forced hierarchical but no results) -->
+            {% if results_data.fallback_reason %}
+                <div class="alert" style="background-color: #fff3cd; border: 1px solid #ffc107; color: #856404; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                    <strong>⚠️ Mode hiérarchique forcé :</strong> {{ results_data.fallback_reason }}
+                    <br>
+                    <small>💡 Essayez une requête sur un sujet présent dans le corpus (ex: "croyance", "signe", "inférence") ou basculez en mode Auto-détection.</small>
+                </div>
+            {% endif %}
+
+            {% if results_data.results %}
 
             <!-- Hierarchical display -->
             {% if results_data.mode == "hierarchical" and results_data.sections %}
