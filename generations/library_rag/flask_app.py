@@ -421,49 +421,58 @@ def hierarchical_search(
                 }
 
             # ═══════════════════════════════════════════════════════════════
-            # STAGE 2: Search Chunk collection filtered by sections
+            # STAGE 2: Search Chunk collection and distribute to sections
             # ═══════════════════════════════════════════════════════════════
+            # Note: Summary.sectionPath != Chunk.sectionPath exactly
+            #   Summary: "Peirce: CP 2.504"
+            #   Chunk:   "Peirce: CP 2.504 > 504. Text..."
+            # We use prefix matching in Python instead of Weaviate filters
 
             chunk_collection = client.collections.get("Chunk")
+
+            # Build filters (author/work only, no sectionPath filter)
+            filters: Optional[Any] = None
+            if author_filter:
+                filters = wvq.Filter.by_property("workAuthor").equal(author_filter)
+            if work_filter:
+                work_filter_obj = wvq.Filter.by_property("workTitle").equal(work_filter)
+                filters = filters & work_filter_obj if filters else work_filter_obj
+
+            # Single query to get all relevant chunks
+            chunks_result = chunk_collection.query.near_text(
+                query=query,
+                limit=limit * len(sections_data),  # Get enough for all sections
+                filters=filters,
+                return_metadata=wvq.MetadataQuery(distance=True),
+            )
+
+            # Convert to list
+            all_chunks_list = [
+                {
+                    "uuid": str(obj.uuid),
+                    "distance": obj.metadata.distance if obj.metadata else None,
+                    "similarity": round((1 - obj.metadata.distance) * 100, 1) if obj.metadata and obj.metadata.distance else None,
+                    **obj.properties
+                }
+                for obj in chunks_result.objects
+            ]
+
+            # Distribute chunks to sections using prefix matching
             all_chunks = []
-
             for section in sections_data:
-                section_path = section["section_path"]
+                section_ref = section["section_path"]  # e.g., "Peirce: CP 2.504"
 
-                # Build filters
-                filters: Optional[Any] = wvq.Filter.by_property("sectionPath").equal(section_path)
-
-                if author_filter:
-                    author_filter_obj = wvq.Filter.by_property("workAuthor").equal(author_filter)
-                    filters = filters & author_filter_obj
-
-                if work_filter:
-                    work_filter_obj = wvq.Filter.by_property("workTitle").equal(work_filter)
-                    filters = filters & work_filter_obj
-
-                # Search chunks in this section
-                # Note: Don't specify return_properties to get nested objects (work, document)
-                chunks_result = chunk_collection.query.near_text(
-                    query=query,
-                    limit=limit,
-                    filters=filters,
-                    return_metadata=wvq.MetadataQuery(distance=True),
-                )
-
-                # Add chunks to section
+                # Find chunks whose sectionPath starts with this reference
                 section_chunks = [
-                    {
-                        "uuid": str(obj.uuid),
-                        "distance": obj.metadata.distance if obj.metadata else None,
-                        "similarity": round((1 - obj.metadata.distance) * 100, 1) if obj.metadata and obj.metadata.distance else None,
-                        **obj.properties
-                    }
-                    for obj in chunks_result.objects
+                    chunk for chunk in all_chunks_list
+                    if chunk.get("sectionPath", "").startswith(section_ref)
                 ]
 
-                section["chunks"] = section_chunks
-                section["chunks_count"] = len(section_chunks)
-                all_chunks.extend(section_chunks)
+                # Sort by similarity and limit per section
+                section_chunks.sort(key=lambda x: x.get("similarity", 0) or 0, reverse=True)
+                section["chunks"] = section_chunks[:limit]
+                section["chunks_count"] = len(section["chunks"])
+                all_chunks.extend(section["chunks"])
 
             # Sort all chunks by similarity (descending)
             all_chunks.sort(key=lambda x: x.get("similarity", 0) or 0, reverse=True)
