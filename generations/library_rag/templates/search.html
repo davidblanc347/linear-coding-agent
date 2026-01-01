@@ -174,62 +174,62 @@
 
             <!-- Hierarchical display -->
             {% if results_data.mode == "hierarchical" and results_data.sections %}
-                {% for section in results_data.sections %}
-                    <div class="section-group">
-                        <div class="section-header">
-                            <h3 style="margin: 0 0 0.5rem 0; font-size: 1.3em;">
-                                📂 {{ section.title[:80] }}{% if section.title|length > 80 %}...{% endif %}
-                                <span class="badge" style="background-color: var(--color-accent-alt); color: white; margin-left: 0.5rem;">{{ section.chunks_count }} passage{% if section.chunks_count > 1 %}s{% endif %}</span>
-                                <span class="badge badge-similarity" style="margin-left: 0.5rem;">⚡ {{ section.similarity }}% similaire</span>
-                            </h3>
-                            {% if section.section_path and section.section_path != section.title %}
-                                <p class="text-muted" style="margin: 0.25rem 0; font-size: 0.9em;">📍 {{ section.section_path }}</p>
-                            {% endif %}
-                            {% if section.summary_text %}
-                                <p class="summary-text" style="margin: 0.5rem 0; font-style: italic; color: #555;">{{ section.summary_text }}</p>
-                            {% endif %}
-                            {% if section.concepts %}
-                                <div class="concepts" style="margin-top: 0.5rem;">
-                                    {% for concept in section.concepts %}
-                                        <span class="badge" style="background-color: rgba(125, 110, 88, 0.15); color: var(--color-accent); border: 1px solid rgba(125, 110, 88, 0.3); margin-right: 0.25rem;">{{ concept }}</span>
+                <!-- Show relevant sections as context -->
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.2em; margin-bottom: 1rem; color: var(--color-accent);">📚 Sections pertinentes trouvées</h3>
+                    <div style="display: flex; flex-direction: column; gap: 1rem;">
+                        {% for section in results_data.sections %}
+                            <div style="padding: 1rem; border-left: 3px solid var(--color-accent); background: rgba(125, 110, 88, 0.05); border-radius: 4px;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <strong>{{ section.title[:80] }}{% if section.title|length > 80 %}...{% endif %}</strong>
+                                    <span class="badge badge-similarity">⚡ {{ section.similarity }}% similaire</span>
+                                </div>
+                                {% if section.summary_text %}
+                                    <p style="margin: 0; font-size: 0.9em; color: var(--color-text-main); font-style: italic;">{{ section.summary_text[:150] }}{% if section.summary_text|length > 150 %}...{% endif %}</p>
+                                {% endif %}
+                                {% if section.concepts %}
+                                    <div style="margin-top: 0.5rem;">
+                                        {% for concept in section.concepts %}
+                                            <span class="badge" style="background-color: rgba(125, 110, 88, 0.15); color: var(--color-accent); border: 1px solid rgba(125, 110, 88, 0.3); margin-right: 0.25rem; font-size: 0.85em;">{{ concept }}</span>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Show top relevant chunks globally -->
+                <div>
+                    <h3 style="font-size: 1.2em; margin-bottom: 1rem; color: var(--color-accent);">📄 Passages les plus pertinents</h3>
+                    {% for chunk in results_data.results[:20] %}
+                        <div class="chunk-item" style="background: white; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid var(--color-accent-alt); border-radius: 4px;">
+                            <div style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                {% if chunk.work and chunk.work.author %}
+                                    <span class="badge badge-author">{{ chunk.work.author }}</span>
+                                {% endif %}
+                                {% if chunk.work and chunk.work.title %}
+                                    <span class="badge badge-work">{{ chunk.work.title }}</span>
+                                {% endif %}
+                                <span class="badge badge-similarity">⚡ {{ chunk.similarity }}% similaire</span>
+                            </div>
+                            <div class="passage-text" style="margin-bottom: 0.5rem;">"{{ chunk.text }}"</div>
+                            <div class="passage-meta" style="font-size: 0.85em; color: #666;">
+                                <strong>Section :</strong> {{ chunk.sectionPath or '—' }} &nbsp;│&nbsp;
+                                <strong>Type :</strong> {{ chunk.unitType or '—' }} &nbsp;│&nbsp;
+                                <strong>Langue :</strong> {{ (chunk.language or '—') | upper }}
+                            </div>
+                            {% if chunk.keywords %}
+                                <div style="margin-top: 0.5rem;">
+                                    {% for kw in chunk.keywords %}
+                                        <span class="keyword-tag">{{ kw }}</span>
                                     {% endfor %}
                                 </div>
                             {% endif %}
                         </div>
-
-                        <!-- Chunks within this section -->
-                        {% if section.chunks %}
-                            <div class="chunks-list" style="margin-left: 1.5rem; margin-top: 1rem;">
-                                {% for chunk in section.chunks %}
-                                    <div class="chunk-item" style="background: white; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid var(--color-accent-alt); border-radius: 4px;">
-                                        <div style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
-                                            {% if chunk.work and chunk.work.author %}
-                                                <span class="badge badge-author">{{ chunk.work.author }}</span>
-                                            {% endif %}
-                                            {% if chunk.work and chunk.work.title %}
-                                                <span class="badge badge-work">{{ chunk.work.title }}</span>
-                                            {% endif %}
-                                            <span class="badge badge-similarity">⚡ {{ chunk.similarity }}% similaire</span>
-                                        </div>
-                                        <div class="passage-text" style="margin-bottom: 0.5rem;">"{{ chunk.text }}"</div>
-                                        <div class="passage-meta" style="font-size: 0.85em; color: #666;">
-                                            <strong>Section :</strong> {{ chunk.sectionPath or section.section_path or '—' }} &nbsp;│&nbsp;
-                                            <strong>Type :</strong> {{ chunk.unitType or '—' }} &nbsp;│&nbsp;
-                                            <strong>Langue :</strong> {{ (chunk.language or '—') | upper }}
-                                        </div>
-                                        {% if chunk.keywords %}
-                                            <div style="margin-top: 0.5rem;">
-                                                {% for kw in chunk.keywords %}
-                                                    <span class="keyword-tag">{{ kw }}</span>
-                                                {% endfor %}
-                                            </div>
-                                        {% endif %}
-                                    </div>
-                                {% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                {% endfor %}
+                    {% endfor %}
+                </div>
+            {% endif %}
 
             <!-- Simple display (original) -->
             {% else %}

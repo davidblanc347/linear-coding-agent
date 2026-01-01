@@ -457,22 +457,18 @@ def hierarchical_search(
                 for obj in chunks_result.objects
             ]
 
-            # Distribute chunks to sections using prefix matching
-            all_chunks = []
+            # NOTE: Summary.sectionPath format doesn't match Chunk.sectionPath
+            # This is a data quality issue that needs to be fixed at ingestion
+            # For now, sections provide context, chunks are shown globally
+            print(f"[HIERARCHICAL] Got {len(all_chunks_list)} chunks total")
+            print(f"[HIERARCHICAL] Found {len(sections_data)} relevant sections")
+
+            all_chunks = all_chunks_list
+
+            # Clear chunks from sections (they're displayed separately)
             for section in sections_data:
-                section_ref = section["section_path"]  # e.g., "Peirce: CP 2.504"
-
-                # Find chunks whose sectionPath starts with this reference
-                section_chunks = [
-                    chunk for chunk in all_chunks_list
-                    if chunk.get("sectionPath", "").startswith(section_ref)
-                ]
-
-                # Sort by similarity and limit per section
-                section_chunks.sort(key=lambda x: x.get("similarity", 0) or 0, reverse=True)
-                section["chunks"] = section_chunks[:limit]
-                section["chunks_count"] = len(section["chunks"])
-                all_chunks.extend(section["chunks"])
+                section["chunks"] = []
+                section["chunks_count"] = 0
 
             # Sort all chunks by similarity (descending)
             all_chunks.sort(key=lambda x: x.get("similarity", 0) or 0, reverse=True)
