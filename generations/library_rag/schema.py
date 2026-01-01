@@ -41,6 +41,15 @@ Vectorization Strategy:
     - Metadata fields use skip_vectorization=True for filtering only
     - Work and Document collections have no vectorizer (metadata only)
 
+Vector Index Configuration (2026-01):
+    - **Dynamic Index**: Automatically switches from flat to HNSW based on collection size
+        - Chunk: Switches at 50,000 vectors
+        - Summary: Switches at 10,000 vectors
+    - **Rotational Quantization (RQ)**: Reduces memory footprint by ~75%
+        - Minimal accuracy loss (<1%)
+        - Essential for scaling to 100k+ chunks
+    - **Distance Metric**: Cosine similarity (matches BGE-M3 training)
+
 Migration Note (2024-12):
     Migrated from MiniLM-L6 (384-dim) to BAAI/bge-m3 (1024-dim) for:
     - 2.7x richer semantic representation
@@ -226,12 +235,32 @@ def create_chunk_collection(client: weaviate.WeaviateClient) -> None:
     Note:
         Uses text2vec-transformers for vectorizing 'text' and 'keywords' fields.
         Other fields have skip_vectorization=True for filtering only.
+
+        Vector Index Configuration:
+            - Dynamic index: starts with flat, switches to HNSW at 50k vectors
+            - Rotational Quantization (RQ): reduces memory by ~75% with minimal accuracy loss
+            - Optimized for scaling from small (1k) to large (1M+) collections
     """
     client.collections.create(
         name="Chunk",
         description="A text chunk (paragraph, argument, etc.) vectorized for semantic search.",
         vectorizer_config=wvc.Configure.Vectorizer.text2vec_transformers(
             vectorize_collection_name=False,
+        ),
+        # Dynamic index with RQ for optimal memory/performance trade-off
+        vector_index_config=wvc.Configure.VectorIndex.dynamic(
+            threshold=50000,  # Switch to HNSW at 50k chunks
+            hnsw=wvc.Reconfigure.VectorIndex.hnsw(
+                quantizer=wvc.Configure.VectorIndex.Quantizer.rq(
+                    enabled=True,
+                    # RQ provides ~75% memory reduction with <1% accuracy loss
+                    # Perfect for scaling philosophical text collections
+                ),
+                distance_metric=wvc.VectorDistances.COSINE,  # BGE-M3 uses cosine similarity
+            ),
+            flat=wvc.Reconfigure.VectorIndex.flat(
+                distance_metric=wvc.VectorDistances.COSINE,
+            ),
         ),
         properties=[
             # Main content (vectorized)
@@ -319,12 +348,31 @@ def create_summary_collection(client: weaviate.WeaviateClient) -> None:
 
     Note:
         Uses text2vec-transformers for vectorizing summary text.
+
+        Vector Index Configuration:
+            - Dynamic index: starts with flat, switches to HNSW at 10k vectors
+            - Rotational Quantization (RQ): reduces memory by ~75%
+            - Lower threshold than Chunk (summaries are fewer and shorter)
     """
     client.collections.create(
         name="Summary",
         description="Chapter or section summary, vectorized for high-level semantic search.",
         vectorizer_config=wvc.Configure.Vectorizer.text2vec_transformers(
             vectorize_collection_name=False,
+        ),
+        # Dynamic index with RQ (lower threshold for summaries)
+        vector_index_config=wvc.Configure.VectorIndex.dynamic(
+            threshold=10000,  # Switch to HNSW at 10k summaries (fewer than chunks)
+            hnsw=wvc.Reconfigure.VectorIndex.hnsw(
+                quantizer=wvc.Configure.VectorIndex.Quantizer.rq(
+                    enabled=True,
+                    # RQ optimal for summaries (shorter, more uniform text)
+                ),
+                distance_metric=wvc.VectorDistances.COSINE,
+            ),
+            flat=wvc.Reconfigure.VectorIndex.flat(
+                distance_metric=wvc.VectorDistances.COSINE,
+            ),
         ),
         properties=[
             wvc.Property(
@@ -496,6 +544,10 @@ def print_summary() -> None:
     print("  - Document: NONE")
     print("  - Chunk:   text2vec (text + keywords)")
     print("  - Summary: text2vec (text)")
+    print("\n✓ Index Vectoriel (Optimisation 2026):")
+    print("  - Chunk:   Dynamic (flat → HNSW @ 50k) + RQ (~75% moins de RAM)")
+    print("  - Summary: Dynamic (flat → HNSW @ 10k) + RQ")
+    print("  - Distance: Cosine (compatible BGE-M3)")
     print("=" * 80)
 
 

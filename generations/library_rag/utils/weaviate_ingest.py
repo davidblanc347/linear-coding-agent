@@ -195,6 +195,293 @@ class DeleteResult(TypedDict, total=False):
     deleted_document: bool
 
 
+def calculate_batch_size(objects: List[ChunkObject], sample_size: int = 10) -> int:
+    """Calculate optimal batch size based on average chunk text length.
+
+    Dynamically adjusts batch size to prevent timeouts with very long chunks
+    while maximizing throughput for shorter chunks. Uses a sample of objects
+    to estimate average length.
+
+    Args:
+        objects: List of ChunkObject dicts to analyze.
+        sample_size: Number of objects to sample for length estimation.
+            Defaults to 10.
+
+    Returns:
+        Recommended batch size (10, 25, 50, or 100).
+
+    Strategy:
+        - Very long chunks (>50k chars): batch_size=10
+          Examples: Peirce CP 8.388 (218k chars), CP 3.403 (150k chars)
+        - Long chunks (10k-50k chars): batch_size=25
+          Examples: Long philosophical arguments
+        - Medium chunks (3k-10k chars): batch_size=50 (default)
+          Examples: Standard paragraphs
+        - Short chunks (<3k chars): batch_size=100
+          Examples: Definitions, brief passages
+
+    Example:
+        >>> chunks = [{"text": "A" * 100000, ...}, ...]  # Very long
+        >>> calculate_batch_size(chunks)
+        10
+
+    Note:
+        Samples first N objects to avoid processing entire list.
+        If sample is empty or all texts are empty, returns safe default of 50.
+    """
+    if not objects:
+        return 50  # Safe default
+
+    # Sample first N objects for efficiency
+    sample: List[ChunkObject] = objects[:sample_size]
+
+    # Calculate average text length
+    total_length: int = 0
+    valid_samples: int = 0
+
+    for obj in sample:
+        text: str = obj.get("text", "")
+        if text:
+            total_length += len(text)
+            valid_samples += 1
+
+    if valid_samples == 0:
+        return 50  # Safe default if no valid samples
+
+    avg_length: int = total_length // valid_samples
+
+    # Determine batch size based on average length
+    if avg_length > 50000:
+        # Very long chunks (e.g., Peirce CP 8.388: 218k chars)
+        # Risk of timeout even with 600s limit
+        return 10
+    elif avg_length > 10000:
+        # Long chunks (10k-50k chars)
+        # Moderate vectorization time
+        return 25
+    elif avg_length > 3000:
+        # Medium chunks (3k-10k chars)
+        # Standard academic paragraphs
+        return 50
+    else:
+        # Short chunks (<3k chars)
+        # Fast vectorization, maximize throughput
+        return 100
+
+
+def validate_document_metadata(
+    doc_name: str,
+    metadata: Dict[str, Any],
+    language: str,
+) -> None:
+    """Validate document metadata before ingestion.
+
+    Ensures that all required metadata fields are present and non-empty
+    to prevent silent errors during nested object creation in Weaviate.
+
+    Args:
+        doc_name: Document identifier (sourceId).
+        metadata: Metadata dict containing title, author, etc.
+        language: Language code.
+
+    Raises:
+        ValueError: If any required field is missing or empty with a
+            detailed error message indicating which field is invalid.
+
+    Example:
+        >>> validate_document_metadata(
+        ...     doc_name="platon_republique",
+        ...     metadata={"title": "La Republique", "author": "Platon"},
+        ...     language="fr",
+        ... )
+        # No error raised
+
+        >>> validate_document_metadata(
+        ...     doc_name="",
+        ...     metadata={"title": "", "author": None},
+        ...     language="fr",
+        ... )
+        ValueError: Invalid doc_name: empty or whitespace-only
+
+    Note:
+        This validation prevents Weaviate errors that occur when nested
+        objects contain None or empty string values.
+    """
+    # Validate doc_name (used as sourceId in nested objects)
+    if not doc_name or not doc_name.strip():
+        raise ValueError(
+            "Invalid doc_name: empty or whitespace-only. "
+            "doc_name is required as it becomes document.sourceId in nested objects."
+        )
+
+    # Validate title (required for work.title nested object)
+    title = metadata.get("title") or metadata.get("work")
+    if not title or not str(title).strip():
+        raise ValueError(
+            f"Invalid metadata for '{doc_name}': 'title' is missing or empty. "
+            "title is required as it becomes work.title in nested objects. "
+            f"Metadata provided: {metadata}"
+        )
+
+    # Validate author (required for work.author nested object)
+    author = metadata.get("author")
+    if not author or not str(author).strip():
+        raise ValueError(
+            f"Invalid metadata for '{doc_name}': 'author' is missing or empty. "
+            "author is required as it becomes work.author in nested objects. "
+            f"Metadata provided: {metadata}"
+        )
+
+    # Validate language (used in chunks)
+    if not language or not language.strip():
+        raise ValueError(
+            f"Invalid language for '{doc_name}': empty or whitespace-only. "
+            "Language code is required (e.g., 'fr', 'en', 'gr')."
+        )
+
+    # Note: edition is optional and can be empty string
+
+
+def validate_chunk_nested_objects(
+    chunk_obj: ChunkObject,
+    chunk_index: int,
+    doc_name: str,
+) -> None:
+    """Validate chunk nested objects before Weaviate insertion.
+
+    Ensures that nested work and document objects contain valid non-empty
+    values to prevent Weaviate insertion errors.
+
+    Args:
+        chunk_obj: ChunkObject dict to validate.
+        chunk_index: Index of chunk in document (for error messages).
+        doc_name: Document name (for error messages).
+
+    Raises:
+        ValueError: If nested objects contain invalid values.
+
+    Example:
+        >>> chunk = {
+        ...     "text": "Some text",
+        ...     "work": {"title": "Republic", "author": "Plato"},
+        ...     "document": {"sourceId": "plato_republic", "edition": ""},
+        ... }
+        >>> validate_chunk_nested_objects(chunk, 0, "plato_republic")
+        # No error raised
+
+        >>> bad_chunk = {
+        ...     "text": "Some text",
+        ...     "work": {"title": "", "author": "Plato"},
+        ...     "document": {"sourceId": "doc", "edition": ""},
+        ... }
+        >>> validate_chunk_nested_objects(bad_chunk, 5, "doc")
+        ValueError: Chunk 5 in 'doc': work.title is empty
+
+    Note:
+        This validation catches issues before Weaviate insertion,
+        providing clear error messages for debugging.
+    """
+    # Validate work nested object
+    work = chunk_obj.get("work", {})
+    if not isinstance(work, dict):
+        raise ValueError(
+            f"Chunk {chunk_index} in '{doc_name}': work is not a dict. "
+            f"Got type {type(work).__name__}: {work}"
+        )
+
+    work_title = work.get("title", "")
+    if not work_title or not str(work_title).strip():
+        raise ValueError(
+            f"Chunk {chunk_index} in '{doc_name}': work.title is empty or None. "
+            f"work nested object: {work}"
+        )
+
+    work_author = work.get("author", "")
+    if not work_author or not str(work_author).strip():
+        raise ValueError(
+            f"Chunk {chunk_index} in '{doc_name}': work.author is empty or None. "
+            f"work nested object: {work}"
+        )
+
+    # Validate document nested object
+    document = chunk_obj.get("document", {})
+    if not isinstance(document, dict):
+        raise ValueError(
+            f"Chunk {chunk_index} in '{doc_name}': document is not a dict. "
+            f"Got type {type(document).__name__}: {document}"
+        )
+
+    doc_sourceId = document.get("sourceId", "")
+    if not doc_sourceId or not str(doc_sourceId).strip():
+        raise ValueError(
+            f"Chunk {chunk_index} in '{doc_name}': document.sourceId is empty or None. "
+            f"document nested object: {document}"
+        )
+
+    # Note: edition is optional and can be empty string
+
+
+def calculate_batch_size_summaries(summaries: List[SummaryObject], sample_size: int = 10) -> int:
+    """Calculate optimal batch size for Summary objects.
+
+    Summaries are typically shorter than chunks (1-3 paragraphs) and more
+    uniform in length. This function uses a simpler strategy optimized
+    for summary characteristics.
+
+    Args:
+        summaries: List of SummaryObject dicts to analyze.
+        sample_size: Number of summaries to sample. Defaults to 10.
+
+    Returns:
+        Recommended batch size (25, 50, or 75).
+
+    Strategy:
+        - Long summaries (>2k chars): batch_size=25
+        - Medium summaries (500-2k chars): batch_size=50 (typical)
+        - Short summaries (<500 chars): batch_size=75
+
+    Example:
+        >>> summaries = [{"text": "Brief summary", ...}, ...]
+        >>> calculate_batch_size_summaries(summaries)
+        75
+
+    Note:
+        Summaries are generally faster to vectorize than chunks due to
+        shorter length and less variability.
+    """
+    if not summaries:
+        return 50  # Safe default
+
+    # Sample summaries
+    sample: List[SummaryObject] = summaries[:sample_size]
+
+    # Calculate average text length
+    total_length: int = 0
+    valid_samples: int = 0
+
+    for summary in sample:
+        text: str = summary.get("text", "")
+        if text:
+            total_length += len(text)
+            valid_samples += 1
+
+    if valid_samples == 0:
+        return 50  # Safe default
+
+    avg_length: int = total_length // valid_samples
+
+    # Determine batch size based on average length
+    if avg_length > 2000:
+        # Long summaries (e.g., chapter overviews)
+        return 25
+    elif avg_length > 500:
+        # Medium summaries (typical)
+        return 50
+    else:
+        # Short summaries (section titles or brief descriptions)
+        return 75
+
+
 class DocumentStats(TypedDict, total=False):
     """Document statistics from Weaviate.
 
@@ -413,23 +700,28 @@ def ingest_summaries(
     if not summaries_to_insert:
         return 0
 
-    # Insérer par petits lots pour éviter les timeouts
-    BATCH_SIZE = 50
+    # Calculer dynamiquement la taille de batch optimale pour summaries
+    batch_size: int = calculate_batch_size_summaries(summaries_to_insert)
     total_inserted = 0
 
     try:
-        logger.info(f"Ingesting {len(summaries_to_insert)} summaries in batches of {BATCH_SIZE}...")
+        # Log batch size avec longueur moyenne
+        avg_len: int = sum(len(s.get("text", "")) for s in summaries_to_insert[:10]) // min(10, len(summaries_to_insert))
+        logger.info(
+            f"Ingesting {len(summaries_to_insert)} summaries in batches of {batch_size} "
+            f"(avg summary length: {avg_len:,} chars)..."
+        )
 
-        for batch_start in range(0, len(summaries_to_insert), BATCH_SIZE):
-            batch_end = min(batch_start + BATCH_SIZE, len(summaries_to_insert))
+        for batch_start in range(0, len(summaries_to_insert), batch_size):
+            batch_end = min(batch_start + batch_size, len(summaries_to_insert))
             batch = summaries_to_insert[batch_start:batch_end]
 
             try:
                 summary_collection.data.insert_many(batch)
                 total_inserted += len(batch)
-                logger.info(f"  Batch {batch_start//BATCH_SIZE + 1}: Inserted {len(batch)} summaries ({total_inserted}/{len(summaries_to_insert)})")
+                logger.info(f"  Batch {batch_start//batch_size + 1}: Inserted {len(batch)} summaries ({total_inserted}/{len(summaries_to_insert)})")
             except Exception as batch_error:
-                logger.warning(f"  Batch {batch_start//BATCH_SIZE + 1} failed: {batch_error}")
+                logger.warning(f"  Batch {batch_start//batch_size + 1} failed: {batch_error}")
                 continue
 
         logger.info(f"{total_inserted} résumés ingérés pour {doc_name}")
@@ -518,6 +810,18 @@ def ingest_document(
                     inserted=[],
                 )
 
+            # ✅ VALIDATION STRICTE : Vérifier métadonnées AVANT traitement
+            try:
+                validate_document_metadata(doc_name, metadata, language)
+                logger.info(f"✓ Metadata validation passed for '{doc_name}'")
+            except ValueError as validation_error:
+                logger.error(f"Metadata validation failed: {validation_error}")
+                return IngestResult(
+                    success=False,
+                    error=f"Validation error: {validation_error}",
+                    inserted=[],
+                )
+
             # Récupérer la collection Chunk
             try:
                 chunk_collection: Collection[Any, Any] = client.collections.get("Chunk")
@@ -550,6 +854,7 @@ def ingest_document(
             # Préparer les objets Chunk à insérer avec nested objects
             objects_to_insert: List[ChunkObject] = []
 
+            # Extraire et valider les métadonnées (validation déjà faite, juste extraction)
             title: str = metadata.get("title") or metadata.get("work") or doc_name
             author: str = metadata.get("author") or "Inconnu"
             edition: str = metadata.get("edition", "")
@@ -602,6 +907,18 @@ def ingest_document(
                     },
                 }
 
+                # ✅ VALIDATION STRICTE : Vérifier nested objects AVANT insertion
+                try:
+                    validate_chunk_nested_objects(chunk_obj, idx, doc_name)
+                except ValueError as validation_error:
+                    # Log l'erreur et arrêter le traitement
+                    logger.error(f"Chunk validation failed: {validation_error}")
+                    return IngestResult(
+                        success=False,
+                        error=f"Chunk validation error at index {idx}: {validation_error}",
+                        inserted=[],
+                    )
+
                 objects_to_insert.append(chunk_obj)
 
             if not objects_to_insert:
@@ -612,22 +929,27 @@ def ingest_document(
                     count=0,
                 )
 
-            # Insérer les objets par petits lots pour éviter les timeouts
-            BATCH_SIZE = 50  # Process 50 chunks at a time
+            # Calculer dynamiquement la taille de batch optimale
+            batch_size: int = calculate_batch_size(objects_to_insert)
             total_inserted = 0
 
-            logger.info(f"Ingesting {len(objects_to_insert)} chunks in batches of {BATCH_SIZE}...")
+            # Log batch size avec justification
+            avg_len: int = sum(len(obj.get("text", "")) for obj in objects_to_insert[:10]) // min(10, len(objects_to_insert))
+            logger.info(
+                f"Ingesting {len(objects_to_insert)} chunks in batches of {batch_size} "
+                f"(avg chunk length: {avg_len:,} chars)..."
+            )
 
-            for batch_start in range(0, len(objects_to_insert), BATCH_SIZE):
-                batch_end = min(batch_start + BATCH_SIZE, len(objects_to_insert))
+            for batch_start in range(0, len(objects_to_insert), batch_size):
+                batch_end = min(batch_start + batch_size, len(objects_to_insert))
                 batch = objects_to_insert[batch_start:batch_end]
 
                 try:
                     _response = chunk_collection.data.insert_many(objects=batch)
                     total_inserted += len(batch)
-                    logger.info(f"  Batch {batch_start//BATCH_SIZE + 1}: Inserted {len(batch)} chunks ({total_inserted}/{len(objects_to_insert)})")
+                    logger.info(f"  Batch {batch_start//batch_size + 1}: Inserted {len(batch)} chunks ({total_inserted}/{len(objects_to_insert)})")
                 except Exception as batch_error:
-                    logger.error(f"  Batch {batch_start//BATCH_SIZE + 1} failed: {batch_error}")
+                    logger.error(f"  Batch {batch_start//batch_size + 1} failed: {batch_error}")
                     # Continue with next batch instead of failing completely
                     continue
 

@@ -67,7 +67,11 @@ from utils.word_processor import (
     build_markdown_from_word,
     extract_word_images,
 )
-from utils.word_toc_extractor import build_toc_from_headings, flatten_toc
+from utils.word_toc_extractor import (
+    build_toc_from_headings,
+    flatten_toc,
+    extract_toc_from_chapter_summaries,
+)
 
 # Note: LLM modules imported dynamically when use_llm=True to avoid import errors
 
@@ -208,7 +212,13 @@ def process_word(
         # ================================================================
         callback("TOC Extraction", "running", "Building table of contents...")
 
-        toc_hierarchical = build_toc_from_headings(content["headings"])
+        # Try to extract TOC from chapter summaries first (more reliable)
+        toc_hierarchical = extract_toc_from_chapter_summaries(content["paragraphs"])
+
+        # Fallback to heading-based TOC if no chapter summaries found
+        if not toc_hierarchical:
+            toc_hierarchical = build_toc_from_headings(content["headings"])
+
         toc_flat = flatten_toc(toc_hierarchical)
 
         callback(

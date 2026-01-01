@@ -227,3 +227,118 @@ def print_toc_tree(
         print(f"{indent}{entry['sectionPath']}: {entry['title']}")
         if entry["children"]:
             print_toc_tree(entry["children"], indent + "  ")
+
+
+def _roman_to_int(roman: str) -> int:
+    """Convert Roman numeral to integer.
+
+    Args:
+        roman: Roman numeral string (I, II, III, IV, V, VI, VII, etc.).
+
+    Returns:
+        Integer value.
+
+    Example:
+        >>> _roman_to_int("I")
+        1
+        >>> _roman_to_int("IV")
+        4
+        >>> _roman_to_int("VII")
+        7
+    """
+    roman_values = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+    result = 0
+    prev_value = 0
+
+    for char in reversed(roman.upper()):
+        value = roman_values.get(char, 0)
+        if value < prev_value:
+            result -= value
+        else:
+            result += value
+        prev_value = value
+
+    return result
+
+
+def extract_toc_from_chapter_summaries(paragraphs: List[Dict[str, Any]]) -> List[TOCEntry]:
+    """Extract TOC from chapter summary paragraphs (CHAPTER I, CHAPTER II, etc.).
+
+    Many Word documents have a "RESUME DES CHAPITRES" or "TABLE OF CONTENTS" section
+    with paragraphs like:
+        CHAPTER I.
+        VARIATION UNDER DOMESTICATION.
+        Description...
+
+    This function extracts those into a proper TOC structure.
+
+    Args:
+        paragraphs: List of paragraph dicts from word_processor.extract_word_content().
+            Each dict must have:
+            - text (str): Paragraph text
+            - is_heading (bool): Whether it's a heading
+            - index (int): Paragraph index
+
+    Returns:
+        List of TOCEntry dicts with hierarchical structure.
+
+    Example:
+        >>> paragraphs = [...]
+        >>> toc = extract_toc_from_chapter_summaries(paragraphs)
+        >>> print(toc[0]["title"])
+        'VARIATION UNDER DOMESTICATION'
+        >>> print(toc[0]["sectionPath"])
+        '1'
+    """
+    import re
+
+    toc: List[TOCEntry] = []
+    toc_started = False
+
+    for para in paragraphs:
+        text = para.get("text", "").strip()
+
+        # Detect TOC start (multiple possible markers)
+        if any(marker in text.upper() for marker in [
+            'RESUME DES CHAPITRES',
+            'TABLE OF CONTENTS',
+            'CONTENTS',
+            'CHAPITRES',
+        ]):
+            toc_started = True
+            continue
+
+        # Extract chapters
+        if toc_started and text.startswith('CHAPTER'):
+            # Split by newlines to get chapter number and title
+            lines = [line.strip() for line in text.split('\n') if line.strip()]
+
+            if len(lines) >= 2:
+                chapter_line = lines[0]
+                title_line = lines[1]
+
+                # Extract chapter number (roman or arabic)
+                match = re.match(r'CHAPTER\s+([IVXLCDM]+|\d+)', chapter_line, re.IGNORECASE)
+                if match:
+                    chapter_num_str = match.group(1)
+
+                    # Convert to integer
+                    if chapter_num_str.isdigit():
+                        chapter_num = int(chapter_num_str)
+                    else:
+                        chapter_num = _roman_to_int(chapter_num_str)
+
+                    # Remove trailing dots
+                    title_clean = title_line.rstrip('.')
+
+                    entry: TOCEntry = {
+                        "title": title_clean,
+                        "level": 1,  # All chapters are top-level
+                        "sectionPath": str(chapter_num),
+                        "pageRange": "",
+                        "children": [],
+                    }
+
+                    toc.append(entry)
+
+    return toc

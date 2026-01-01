@@ -49,6 +49,11 @@ Thumbs.db
 output/*/images/
 output/*/*.json
 output/*/*.md
+output/*.wav
+output/*.docx
+output/*.pdf
+output/test_audio/
+output/voices/
 
 # Keep output folder structure
 !output/.gitkeep
@@ -59,6 +64,12 @@ output/*/*.md
 *.backup
 temp_*.py
 cleanup_*.py
+*.wav
+NUL
+brinderb_temp.wav
+
+# Input temporary files
+input/
 
 # Type checking outputs
 mypy_errors.txt
