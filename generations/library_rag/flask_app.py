@@ -421,56 +421,55 @@ def hierarchical_search(
                 }
 
             # ═══════════════════════════════════════════════════════════════
-            # STAGE 2: Search Chunk collection and distribute to sections
+            # STAGE 2: Search chunks for EACH section (grouped display)
             # ═══════════════════════════════════════════════════════════════
-            # Note: Summary.sectionPath != Chunk.sectionPath exactly
-            #   Summary: "Peirce: CP 2.504"
-            #   Chunk:   "Peirce: CP 2.504 > 504. Text..."
-            # We use prefix matching in Python instead of Weaviate filters
+            # For each section, search chunks using the section's summary text
+            # This groups chunks under their relevant sections
 
             chunk_collection = client.collections.get("Chunk")
 
-            # Build filters (author/work only, no sectionPath filter)
-            filters: Optional[Any] = None
+            # Build base filters (author/work only)
+            base_filters: Optional[Any] = None
             if author_filter:
-                filters = wvq.Filter.by_property("workAuthor").equal(author_filter)
+                base_filters = wvq.Filter.by_property("workAuthor").equal(author_filter)
             if work_filter:
                 work_filter_obj = wvq.Filter.by_property("workTitle").equal(work_filter)
-                filters = filters & work_filter_obj if filters else work_filter_obj
+                base_filters = base_filters & work_filter_obj if base_filters else work_filter_obj
 
-            # Single query to get all relevant chunks
-            chunks_result = chunk_collection.query.near_text(
-                query=query,
-                limit=limit * len(sections_data),  # Get enough for all sections
-                filters=filters,
-                return_metadata=wvq.MetadataQuery(distance=True),
-            )
+            all_chunks = []
+            chunks_per_section = max(3, limit // len(sections_data))  # Distribute chunks across sections
 
-            # Convert to list
-            all_chunks_list = [
-                {
-                    "uuid": str(obj.uuid),
-                    "distance": obj.metadata.distance if obj.metadata else None,
-                    "similarity": round((1 - obj.metadata.distance) * 100, 1) if obj.metadata and obj.metadata.distance else None,
-                    **obj.properties
-                }
-                for obj in chunks_result.objects
-            ]
-
-            # NOTE: Summary.sectionPath format doesn't match Chunk.sectionPath
-            # This is a data quality issue that needs to be fixed at ingestion
-            # For now, sections provide context, chunks are shown globally
-            print(f"[HIERARCHICAL] Got {len(all_chunks_list)} chunks total")
-            print(f"[HIERARCHICAL] Found {len(sections_data)} relevant sections")
-
-            all_chunks = all_chunks_list
-
-            # Clear chunks from sections (they're displayed separately)
             for section in sections_data:
-                section["chunks"] = []
-                section["chunks_count"] = 0
+                # Use section's summary text as query to find relevant chunks
+                # This ensures chunks are semantically related to the section
+                section_query = section["summary_text"] or section["title"] or query
 
-            # Sort all chunks by similarity (descending)
+                chunks_result = chunk_collection.query.near_text(
+                    query=section_query,
+                    limit=chunks_per_section,
+                    filters=base_filters,
+                    return_metadata=wvq.MetadataQuery(distance=True),
+                )
+
+                # Convert to list and attach to section
+                section_chunks = [
+                    {
+                        "uuid": str(obj.uuid),
+                        "distance": obj.metadata.distance if obj.metadata else None,
+                        "similarity": round((1 - obj.metadata.distance) * 100, 1) if obj.metadata and obj.metadata.distance else None,
+                        **obj.properties
+                    }
+                    for obj in chunks_result.objects
+                ]
+
+                section["chunks"] = section_chunks
+                section["chunks_count"] = len(section_chunks)
+                all_chunks.extend(section_chunks)
+
+            print(f"[HIERARCHICAL] Got {len(all_chunks)} chunks total across {len(sections_data)} sections")
+            print(f"[HIERARCHICAL] Average {len(all_chunks) / len(sections_data):.1f} chunks per section")
+
+            # Sort all chunks globally by similarity for the flat results list
             all_chunks.sort(key=lambda x: x.get("similarity", 0) or 0, reverse=True)
 
             return {
