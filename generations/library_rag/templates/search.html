@@ -6,23 +6,23 @@
 <style>
 .section-group {
     margin-bottom: 2rem;
-    border: 1px solid #dee2e6;
+    border: 1px solid rgba(125, 110, 88, 0.2);
     border-radius: 8px;
     padding: 1.5rem;
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    background: linear-gradient(135deg, var(--color-bg-main) 0%, #ffffff 100%);
+    box-shadow: 0 2px 8px rgba(125, 110, 88, 0.08);
 }
 
 .section-header {
     margin-bottom: 1rem;
     padding-bottom: 0.75rem;
-    border-bottom: 2px solid #007bff;
+    border-bottom: 2px solid var(--color-accent);
 }
 
 .summary-text {
     margin: 0.5rem 0;
     font-style: italic;
-    color: #555;
+    color: var(--color-text-main);
     line-height: 1.5;
 }
 
@@ -39,14 +39,15 @@
     background: white;
     padding: 1rem;
     margin-bottom: 0.75rem;
-    border-left: 3px solid #007bff;
+    border-left: 3px solid var(--color-accent-alt);
     border-radius: 4px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    transition: box-shadow 0.2s ease;
+    box-shadow: 0 1px 3px rgba(85, 107, 99, 0.12);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .chunk-item:hover {
-    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    box-shadow: 0 2px 6px rgba(85, 107, 99, 0.18);
+    transform: translateX(2px);
 }
 </style>
 <section class="section">
@@ -138,11 +139,11 @@
                 </div>
                 <div>
                     {% if results_data.mode == "hierarchical" %}
-                        <span class="badge" style="background-color: #28a745; color: white; font-size: 0.9em;">
+                        <span class="badge" style="background-color: var(--color-accent-alt); color: white; font-size: 0.9em;">
                             🌳 Recherche hiérarchique ({{ results_data.sections|length }} sections)
                         </span>
                     {% else %}
-                        <span class="badge" style="background-color: #6c757d; color: white; font-size: 0.9em;">
+                        <span class="badge" style="background-color: var(--color-accent); color: white; font-size: 0.9em;">
                             📄 Recherche simple
                         </span>
                     {% endif %}
@@ -162,7 +163,7 @@
 
             <!-- Fallback reason warning (when forced hierarchical but no results) -->
             {% if results_data.fallback_reason %}
-                <div class="alert" style="background-color: #fff3cd; border: 1px solid #ffc107; color: #856404; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                <div class="alert" style="background-color: rgba(125, 110, 88, 0.1); border: 1px solid var(--color-accent); color: var(--color-text-strong); padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
                     <strong>⚠️ Mode hiérarchique forcé :</strong> {{ results_data.fallback_reason }}
                     <br>
                     <small>💡 Essayez une requête sur un sujet présent dans le corpus (ex: "croyance", "signe", "inférence") ou basculez en mode Auto-détection.</small>
@@ -178,17 +179,17 @@
                         <div class="section-header">
                             <h3 style="margin: 0 0 0.5rem 0; font-size: 1.3em;">
                                 📂 {{ section.title }}
-                                <span class="badge" style="background-color: #007bff; color: white; margin-left: 0.5rem;">{{ section.chunks_count }} passage{% if section.chunks_count > 1 %}s{% endif %}</span>
-                                <span class="badge badge-success" style="margin-left: 0.5rem;">⚡ {{ section.similarity }}% similaire</span>
+                                <span class="badge" style="background-color: var(--color-accent-alt); color: white; margin-left: 0.5rem;">{{ section.chunks_count }} passage{% if section.chunks_count > 1 %}s{% endif %}</span>
+                                <span class="badge badge-similarity" style="margin-left: 0.5rem;">⚡ {{ section.similarity }}% similaire</span>
                             </h3>
-                            <p class="text-muted" style="margin: 0.25rem 0; font-size: 0.9em;">{{ section.section_path }}</p>
+                            <p class="text-muted" style="margin: 0.25rem 0; font-size: 0.9em;">📍 {{ section.section_path }}</p>
                             {% if section.summary_text %}
                                 <p class="summary-text" style="margin: 0.5rem 0; font-style: italic; color: #555;">{{ section.summary_text }}</p>
                             {% endif %}
                             {% if section.concepts %}
                                 <div class="concepts" style="margin-top: 0.5rem;">
                                     {% for concept in section.concepts %}
-                                        <span class="badge badge-info" style="margin-right: 0.25rem;">{{ concept }}</span>
+                                        <span class="badge" style="background-color: rgba(125, 110, 88, 0.15); color: var(--color-accent); border: 1px solid rgba(125, 110, 88, 0.3); margin-right: 0.25rem;">{{ concept }}</span>
                                     {% endfor %}
                                 </div>
                             {% endif %}
@@ -198,15 +199,21 @@
                         {% if section.chunks %}
                             <div class="chunks-list" style="margin-left: 1.5rem; margin-top: 1rem;">
                                 {% for chunk in section.chunks %}
-                                    <div class="chunk-item" style="background: white; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid #007bff; border-radius: 4px;">
-                                        <div style="margin-bottom: 0.5rem;">
-                                            <span class="badge badge-success">⚡ {{ chunk.similarity }}% similaire</span>
+                                    <div class="chunk-item" style="background: white; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid var(--color-accent-alt); border-radius: 4px;">
+                                        <div style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                            {% if chunk.work and chunk.work.author %}
+                                                <span class="badge badge-author">{{ chunk.work.author }}</span>
+                                            {% endif %}
+                                            {% if chunk.work and chunk.work.title %}
+                                                <span class="badge badge-work">{{ chunk.work.title }}</span>
+                                            {% endif %}
+                                            <span class="badge badge-similarity">⚡ {{ chunk.similarity }}% similaire</span>
                                         </div>
                                         <div class="passage-text" style="margin-bottom: 0.5rem;">"{{ chunk.text }}"</div>
                                         <div class="passage-meta" style="font-size: 0.85em; color: #666;">
+                                            <strong>Section :</strong> {{ chunk.sectionPath or section.section_path or '—' }} &nbsp;│&nbsp;
                                             <strong>Type :</strong> {{ chunk.unitType or '—' }} &nbsp;│&nbsp;
-                                            <strong>Langue :</strong> {{ (chunk.language or '—') | upper }} &nbsp;│&nbsp;
-                                            <strong>Index :</strong> {{ chunk.orderIndex or '—' }}
+                                            <strong>Langue :</strong> {{ (chunk.language or '—') | upper }}
                                         </div>
                                         {% if chunk.keywords %}
                                             <div style="margin-top: 0.5rem;">
