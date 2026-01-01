@@ -481,8 +481,7 @@ def hierarchical_search(
 
     except ValueError as e:
         # Check if this is our fallback signal
-        error_msg = str(e)
-        if error_msg == "FALLBACK_TO_SIMPLE" or error_msg.startswith("FALLBACK_ERROR:"):
+        if str(e) == "FALLBACK_TO_SIMPLE":
             # Fallback to simple search (outside context manager)
             results = simple_search(query, limit, author_filter, work_filter)
             return {
@@ -497,20 +496,15 @@ def hierarchical_search(
         import traceback
         traceback.print_exc()
 
-        # Fallback to simple search on error (unless forced)
-        if not force_hierarchical:
-            # CRITICAL: We're still inside the 'with' block here!
-            # Signal fallback to exit context manager before calling simple_search()
-            raise ValueError(f"FALLBACK_ERROR: {str(e)}")
-        else:
-            # Forced hierarchical: return error in hierarchical format
-            return {
-                "mode": "hierarchical",
-                "sections": [],
-                "results": [],
-                "total_chunks": 0,
-                "fallback_reason": f"Erreur lors de la recherche hiérarchique: {str(e)}",
-            }
+        # CRITICAL: Never call simple_search() here - we're still cleaning up the context manager!
+        # Instead, return empty result and let the caller decide if they want to retry
+        return {
+            "mode": "hierarchical" if force_hierarchical else "simple",
+            "sections": [],
+            "results": [],
+            "total_chunks": 0,
+            "fallback_reason": f"Erreur lors de la recherche: {str(e)}",
+        }
 
 
 def should_use_hierarchical_search(query: str) -> bool:
