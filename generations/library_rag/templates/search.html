@@ -178,19 +178,23 @@
                     <h3 style="font-size: 1.3em; margin-bottom: 1.5rem; color: var(--color-accent);">📚 Sections pertinentes avec passages</h3>
 
                     {% for section in results_data.sections %}
-                        <div class="section-group" style="margin-bottom: 2rem; border: 1px solid rgba(125, 110, 88, 0.2); border-radius: 8px; padding: 1.5rem; background: linear-gradient(135deg, var(--color-bg-main) 0%, #ffffff 100%); box-shadow: 0 2px 8px rgba(125, 110, 88, 0.08);">
-                            <!-- Section header -->
-                            <div class="section-header" style="margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 2px solid var(--color-accent);">
-                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
-                                    <h4 style="margin: 0; font-size: 1.1em; color: var(--color-text-strong);">{{ section.title[:100] }}{% if section.title|length > 100 %}...{% endif %}</h4>
+                        <div class="section-group" style="margin-bottom: 2.5rem; border: 2px solid rgba(125, 110, 88, 0.3); border-radius: 10px; overflow: hidden; box-shadow: 0 3px 12px rgba(125, 110, 88, 0.12);">
+                            <!-- Section header (fond beige distinct) -->
+                            <div class="section-header" style="margin: 0; padding: 1.25rem 1.5rem; background: linear-gradient(135deg, rgba(125, 110, 88, 0.12) 0%, rgba(125, 110, 88, 0.06) 100%); border-bottom: 3px solid var(--color-accent);">
+                                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+                                    <span style="font-size: 1.3em; color: var(--color-accent);">📂</span>
+                                    <h4 style="margin: 0; font-size: 1.2em; font-weight: 600; color: var(--color-text-strong); font-family: var(--font-title);">Section : {{ section.title[:120] }}{% if section.title|length > 120 %}...{% endif %}</h4>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                                     <span class="badge badge-similarity">⚡ {{ section.similarity }}% similaire</span>
-                                    <span class="badge" style="background-color: rgba(125, 110, 88, 0.15); color: var(--color-accent); font-size: 0.85em;">{{ section.chunks_count }} passage{% if section.chunks_count > 1 %}s{% endif %}</span>
+                                    <span class="badge" style="background-color: var(--color-accent); color: white; font-weight: 500;">{{ section.chunks_count }} passage{% if section.chunks_count > 1 %}s{% endif %}</span>
                                 </div>
                                 {% if section.summary_text and section.summary_text != section.title and section.summary_text != section.section_path %}
-                                    <p class="summary-text" style="margin: 0.5rem 0 0 0; font-size: 0.9em; color: var(--color-text-main); font-style: italic; line-height: 1.5;">{{ section.summary_text[:200] }}{% if section.summary_text|length > 200 %}...{% endif %}</p>
+                                    <p class="summary-text" style="margin: 0.75rem 0 0 0; padding: 0.75rem; background: rgba(255, 255, 255, 0.5); border-radius: 4px; font-size: 0.9em; color: var(--color-text-main); font-style: italic; line-height: 1.6;">{{ section.summary_text[:250] }}{% if section.summary_text|length > 250 %}...{% endif %}</p>
                                 {% endif %}
                                 {% if section.concepts %}
-                                    <div class="concepts" style="margin-top: 0.5rem;">
+                                    <div class="concepts" style="margin-top: 0.75rem;">
+                                        <strong style="font-size: 0.85em; color: var(--color-accent); margin-right: 0.5rem;">Concepts :</strong>
                                         {% for concept in section.concepts %}
                                             <span class="badge" style="background-color: rgba(125, 110, 88, 0.15); color: var(--color-accent); border: 1px solid rgba(125, 110, 88, 0.3); margin-right: 0.25rem; font-size: 0.85em;">{{ concept }}</span>
                                         {% endfor %}
@@ -198,9 +202,9 @@
                                 {% endif %}
                             </div>
 
-                            <!-- Chunks under this section -->
+                            <!-- Chunks under this section (fond blanc, indentés) -->
                             {% if section.chunks %}
-                                <div class="chunks-list" style="margin-left: 0; margin-top: 1rem;">
+                                <div class="chunks-list" style="padding: 1.5rem; background: white;">
                                     {% for chunk in section.chunks %}
                                         <div class="chunk-item" style="background: white; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid var(--color-accent-alt); border-radius: 4px; box-shadow: 0 1px 3px rgba(85, 107, 99, 0.12);">
                                             <div style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
