@@ -202,10 +202,9 @@
                                 </div>
                                 {% endif %}
 
-                                <!-- Ligne 3 : Titre section + icône -->
-                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
-                                    <span style="color: var(--color-accent);">📂</span>
-                                    <span style="color: var(--color-text-strong);">{{ section.title[:120] }}{% if section.title|length > 120 %}...{% endif %}</span>
+                                <!-- Ligne 3 : Titre section -->
+                                <div style="margin-bottom: 0.75rem;">
+                                    <span style="color: var(--color-accent); background: rgba(125, 110, 88, 0.08); padding: 0.25rem 0.5rem; border-radius: 4px;">📂 {{ section.title[:120] }}{% if section.title|length > 120 %}...{% endif %}</span>
                                 </div>
                                 {% if section.summary_text and section.summary_text != section.title and section.summary_text != section.section_path %}
                                     <p class="summary-text" style="margin: 0.75rem 0 0 0; padding: 0.75rem; background: rgba(255, 255, 255, 0.5); border-radius: 4px; font-size: 0.9em; color: var(--color-text-main); font-style: italic; line-height: 1.6;">{{ section.summary_text[:250] }}{% if section.summary_text|length > 250 %}...{% endif %}</p>
