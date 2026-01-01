@@ -179,8 +179,8 @@
 
                     {% for section in results_data.sections %}
                         <div class="section-group" style="margin-bottom: 2.5rem; border: 2px solid rgba(125, 110, 88, 0.3); border-radius: 10px; overflow: hidden; box-shadow: 0 3px 12px rgba(125, 110, 88, 0.12);">
-                            <!-- Section header (fond beige distinct) -->
-                            <div class="section-header" style="margin: 0; padding: 1.25rem 1.5rem; background: linear-gradient(135deg, rgba(125, 110, 88, 0.12) 0%, rgba(125, 110, 88, 0.06) 100%); border-bottom: 3px solid var(--color-accent);">
+                            <!-- Section header -->
+                            <div class="section-header" style="margin: 0; padding: 1.25rem 1.5rem; border-bottom: 3px solid var(--color-accent);">
                                 <!-- Ligne 1 : Auteur, œuvre, similarité, nb passages -->
                                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
                                     {% if section.chunks and section.chunks[0].work %}
@@ -198,13 +198,13 @@
                                 <!-- Ligne 2 : Hiérarchie (chapter title du premier chunk) -->
                                 {% if section.chunks and section.chunks[0].chapterTitle %}
                                 <div style="margin-bottom: 0.5rem;">
-                                    <span style="color: var(--color-accent); background: rgba(125, 110, 88, 0.08); padding: 0.25rem 0.5rem; border-radius: 4px;">🗂️ {{ section.chunks[0].chapterTitle }}</span>
+                                    <span style="color: var(--color-accent);">🗂️ {{ section.chunks[0].chapterTitle }}</span>
                                 </div>
                                 {% endif %}
 
                                 <!-- Ligne 3 : Titre section -->
                                 <div style="margin-bottom: 0.75rem;">
-                                    <span style="color: var(--color-accent); background: rgba(125, 110, 88, 0.08); padding: 0.25rem 0.5rem; border-radius: 4px;">📂 {{ section.title[:120] }}{% if section.title|length > 120 %}...{% endif %}</span>
+                                    <span style="color: var(--color-accent);">📂 {{ section.title[:120] }}{% if section.title|length > 120 %}...{% endif %}</span>
                                 </div>
                                 {% if section.summary_text and section.summary_text != section.title and section.summary_text != section.section_path %}
                                     <p class="summary-text" style="margin: 0.75rem 0 0 0; padding: 0.75rem; background: rgba(255, 255, 255, 0.5); border-radius: 4px; font-size: 0.9em; color: var(--color-text-main); font-style: italic; line-height: 1.6;">{{ section.summary_text[:250] }}{% if section.summary_text|length > 250 %}...{% endif %}</p>
