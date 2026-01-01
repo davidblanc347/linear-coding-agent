@@ -198,14 +198,14 @@
                                 <!-- Ligne 2 : Hiérarchie (chapter title du premier chunk) -->
                                 {% if section.chunks and section.chunks[0].chapterTitle %}
                                 <div style="margin-bottom: 0.5rem;">
-                                    <span style="font-size: 0.9em; color: var(--color-accent); background: rgba(125, 110, 88, 0.08); padding: 0.25rem 0.5rem; border-radius: 4px;">🗂️ {{ section.chunks[0].chapterTitle }}</span>
+                                    <span style="color: var(--color-accent); background: rgba(125, 110, 88, 0.08); padding: 0.25rem 0.5rem; border-radius: 4px;">🗂️ {{ section.chunks[0].chapterTitle }}</span>
                                 </div>
                                 {% endif %}
 
                                 <!-- Ligne 3 : Titre section + icône -->
-                                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
-                                    <span style="font-size: 1.3em; color: var(--color-accent);">📂</span>
-                                    <h4 style="margin: 0; font-size: 1.2em; font-weight: 600; color: var(--color-text-strong); font-family: var(--font-title);">{{ section.title[:120] }}{% if section.title|length > 120 %}...{% endif %}</h4>
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+                                    <span style="color: var(--color-accent);">📂</span>
+                                    <span style="color: var(--color-text-strong); font-weight: 600;">{{ section.title[:120] }}{% if section.title|length > 120 %}...{% endif %}</span>
                                 </div>
                                 {% if section.summary_text and section.summary_text != section.title and section.summary_text != section.section_path %}
                                     <p class="summary-text" style="margin: 0.75rem 0 0 0; padding: 0.75rem; background: rgba(255, 255, 255, 0.5); border-radius: 4px; font-size: 0.9em; color: var(--color-text-main); font-style: italic; line-height: 1.6;">{{ section.summary_text[:250] }}{% if section.summary_text|length > 250 %}...{% endif %}</p>
