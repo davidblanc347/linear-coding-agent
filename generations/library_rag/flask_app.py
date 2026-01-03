@@ -339,9 +339,8 @@ def hierarchical_search(
                 query=query,
                 limit=sections_limit,
                 return_metadata=wvq.MetadataQuery(distance=True),
-                return_properties=[
-                    "sectionPath", "title", "text", "level", "concepts"
-                ],
+                # Note: Don't specify return_properties - let Weaviate return all properties
+                # including nested objects like "document" which we need for source_id
             )
 
             if not summaries_result.objects:
@@ -550,6 +549,110 @@ def should_use_hierarchical_search(query: str) -> bool:
     return False
 
 
+def summary_only_search(
+    query: str,
+    limit: int = 10,
+    author_filter: Optional[str] = None,
+    work_filter: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Summary-only semantic search on Summary collection (90% visibility).
+
+    Searches high-level section summaries instead of detailed chunks. Offers
+    90% visibility of rich documents vs 10% for direct chunk search due to
+    Peirce chunk dominance (5,068/5,230 = 97% of chunks).
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of summary results to return.
+        author_filter: Filter by author name (uses document.author property).
+        work_filter: Filter by work title (uses document.title property).
+
+    Returns:
+        List of summary dictionaries formatted as "results" with:
+        - uuid, similarity, text, title, concepts, doc_icon, doc_name
+        - author, year, chunks_count, section_path
+    """
+    try:
+        with get_weaviate_client() as client:
+            if client is None:
+                return []
+
+            summaries = client.collections.get("Summary")
+
+            # Note: Cannot filter by nested document properties directly in Weaviate v4
+            # Must fetch all and filter in Python if author/work filters are present
+
+            # Semantic search
+            results = summaries.query.near_text(
+                query=query,
+                limit=limit * 3 if (author_filter or work_filter) else limit,  # Fetch more if filtering
+                return_metadata=wvq.MetadataQuery(distance=True)
+            )
+
+            # Format and filter results
+            formatted_results: List[Dict[str, Any]] = []
+            for obj in results.objects:
+                props = obj.properties
+                similarity = 1 - obj.metadata.distance
+
+                # Apply filters (Python-side since nested properties)
+                if author_filter and props["document"].get("author", "") != author_filter:
+                    continue
+                if work_filter and props["document"].get("title", "") != work_filter:
+                    continue
+
+                # Determine document icon and name
+                doc_id = props["document"]["sourceId"].lower()
+                if "tiercelin" in doc_id:
+                    doc_icon = "🟡"
+                    doc_name = "Tiercelin"
+                elif "platon" in doc_id or "menon" in doc_id:
+                    doc_icon = "🟢"
+                    doc_name = "Platon"
+                elif "haugeland" in doc_id:
+                    doc_icon = "🟣"
+                    doc_name = "Haugeland"
+                elif "logique" in doc_id:
+                    doc_icon = "🔵"
+                    doc_name = "Logique"
+                else:
+                    doc_icon = "⚪"
+                    doc_name = "Peirce"
+
+                # Format result (compatible with existing template expectations)
+                result = {
+                    "uuid": str(obj.uuid),
+                    "similarity": round(similarity * 100, 1),  # Convert to percentage
+                    "text": props.get("text", ""),
+                    "title": props["title"],
+                    "concepts": props.get("concepts", []),
+                    "doc_icon": doc_icon,
+                    "doc_name": doc_name,
+                    "author": props["document"].get("author", ""),
+                    "year": props["document"].get("year", 0),
+                    "chunks_count": props.get("chunksCount", 0),
+                    "section_path": props.get("sectionPath", ""),
+                    "sectionPath": props.get("sectionPath", ""),  # Alias for template compatibility
+                    # Add work info for template compatibility
+                    "work": {
+                        "title": props["document"].get("title", ""),
+                        "author": props["document"].get("author", ""),
+                    },
+                }
+
+                formatted_results.append(result)
+
+                # Stop if we have enough results after filtering
+                if len(formatted_results) >= limit:
+                    break
+
+            return formatted_results
+
+    except Exception as e:
+        print(f"Error in summary_only_search: {e}")
+        return []
+
+
 def search_passages(
     query: str,
     limit: int = 10,
@@ -560,9 +663,8 @@ def search_passages(
 ) -> Dict[str, Any]:
     """Intelligent semantic search dispatcher with auto-detection.
 
-    Automatically chooses between simple (1-stage) and hierarchical (2-stage)
-    search based on query complexity. Complex queries use hierarchical search
-    for better precision and context.
+    Automatically chooses between simple (1-stage), hierarchical (2-stage),
+    or summary-only search based on query complexity or user selection.
 
     Args:
         query: Search query text.
@@ -570,14 +672,14 @@ def search_passages(
         author_filter: Filter by author name (uses workAuthor property).
         work_filter: Filter by work title (uses workTitle property).
         sections_limit: Number of top sections for hierarchical search (default: 5).
-        force_mode: Force search mode ("simple", "hierarchical", or None for auto).
+        force_mode: Force search mode ("simple", "hierarchical", "summary", or None for auto).
 
     Returns:
         Dictionary with search results:
-        - mode: "simple" or "hierarchical"
-        - results: List of passage dictionaries (flat)
+        - mode: "simple", "hierarchical", or "summary"
+        - results: List of passage/summary dictionaries (flat)
         - sections: List of section dicts with nested chunks (hierarchical only)
-        - total_chunks: Total number of chunks found
+        - total_chunks: Total number of chunks/summaries found
 
     Examples:
         >>> # Short query → auto-detects simple search
@@ -588,11 +690,20 @@ def search_passages(
         >>> search_passages("Qu'est-ce que la vertu selon Aristote ?", limit=5)
         {"mode": "hierarchical", "sections": [...], "results": [...], "total_chunks": 15}
 
-        >>> # Force hierarchical mode
-        >>> search_passages("justice", force_mode="hierarchical", sections_limit=3)
-        {"mode": "hierarchical", ...}
+        >>> # Force summary-only mode (90% visibility, high-level overviews)
+        >>> search_passages("What is the Turing test?", force_mode="summary", limit=10)
+        {"mode": "summary", "results": [...], "total_chunks": 7}
     """
-    # Determine search mode
+    # Handle summary-only mode
+    if force_mode == "summary":
+        results = summary_only_search(query, limit, author_filter, work_filter)
+        return {
+            "mode": "summary",
+            "results": results,
+            "total_chunks": len(results),
+        }
+
+    # Determine search mode for simple vs hierarchical
     if force_mode == "simple":
         use_hierarchical = False
     elif force_mode == "hierarchical":

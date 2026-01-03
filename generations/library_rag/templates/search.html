@@ -115,8 +115,9 @@
                     <label class="form-label" for="mode">Mode de recherche</label>
                     <select name="mode" id="mode" class="form-control">
                         <option value="" {{ 'selected' if not mode else '' }}>🤖 Auto-détection</option>
-                        <option value="simple" {{ 'selected' if mode == 'simple' else '' }}>📄 Simple (1-étape)</option>
-                        <option value="hierarchical" {{ 'selected' if mode == 'hierarchical' else '' }}>🌳 Hiérarchique (2-étapes)</option>
+                        <option value="simple" {{ 'selected' if mode == 'simple' else '' }}>📄 Simple (Chunks)</option>
+                        <option value="hierarchical" {{ 'selected' if mode == 'hierarchical' else '' }}>🌳 Hiérarchique (Summary → Chunks)</option>
+                        <option value="summary" {{ 'selected' if mode == 'summary' else '' }}>📚 Résumés uniquement (90% visibilité)</option>
                     </select>
                 </div>
             </div>
@@ -141,6 +142,10 @@
                     {% if results_data.mode == "hierarchical" %}
                         <span class="badge" style="background-color: var(--color-accent-alt); color: white; font-size: 0.9em;">
                             🌳 Recherche hiérarchique ({{ results_data.sections|length }} sections)
+                        </span>
+                    {% elif results_data.mode == "summary" %}
+                        <span class="badge" style="background-color: #556B63; color: white; font-size: 0.9em;">
+                            📚 Résumés uniquement (90% visibilité)
                         </span>
                     {% else %}
                         <span class="badge" style="background-color: var(--color-accent); color: white; font-size: 0.9em;">
@@ -255,6 +260,60 @@
                         </div>
                     {% endfor %}
                 </div>
+
+            <!-- Summary display -->
+            {% elif results_data.mode == "summary" %}
+                {% for result in results_data.results %}
+                <div class="passage-card" style="border-left-width: 4px;">
+                    <div class="passage-header">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                            <span style="font-size: 1.3rem;">{{ result.doc_icon }}</span>
+                            <span class="badge badge-author">{{ result.doc_name }}</span>
+                            {% if result.author %}
+                                <span class="badge badge-work">{{ result.author }}{% if result.year %} ({{ result.year }}){% endif %}</span>
+                            {% endif %}
+                        </div>
+                        <span class="badge badge-similarity">⚡ {{ result.similarity }}% similaire</span>
+                    </div>
+
+                    <h3 style="font-size: 1.1rem; margin: 0.75rem 0; color: var(--color-text-strong); font-family: var(--font-title);">
+                        {{ result.title }}
+                    </h3>
+
+                    {% if result.text and result.text != result.title %}
+                        <div class="passage-text" style="background: rgba(255, 255, 255, 0.5); padding: 1rem; border-radius: 6px; border-left: 3px solid var(--color-accent-alt); margin: 0.75rem 0;">
+                            {% if result.text|length > 400 %}
+                                {{ result.text[:397] }}...
+                            {% else %}
+                                {{ result.text }}
+                            {% endif %}
+                        </div>
+                    {% endif %}
+
+                    {% if result.concepts %}
+                        <div style="margin-top: 0.75rem;">
+                            <strong style="font-size: 0.85em; color: var(--color-accent);">Concepts :</strong>
+                            {% for concept in result.concepts[:8] %}
+                                <span class="keyword-tag" style="background-color: rgba(125, 110, 88, 0.12); border-color: rgba(125, 110, 88, 0.3);">{{ concept }}</span>
+                            {% endfor %}
+                            {% if result.concepts|length > 8 %}
+                                <span class="keyword-tag" style="background-color: transparent;">+{{ result.concepts|length - 8 }} autres</span>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+
+                    <div class="passage-meta" style="margin-top: 0.75rem;">
+                        {% if result.chunks_count > 0 %}
+                            <span style="background-color: var(--color-accent-alt); color: white; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85em;">
+                                📄 {{ result.chunks_count }} passage{% if result.chunks_count > 1 %}s{% endif %} détaillé{% if result.chunks_count > 1 %}s{% endif %}
+                            </span>
+                        {% endif %}
+                        {% if result.section_path %}
+                            &nbsp;│&nbsp; <strong>Section :</strong> {{ result.section_path[:70] }}{% if result.section_path|length > 70 %}...{% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
 
             <!-- Simple display (original) -->
             {% else %}
