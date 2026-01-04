@@ -1672,6 +1672,7 @@ def run_chat_generation(
     model: str,
     limit: int,
     use_reformulation: bool = True,
+    selected_works: List[str] = None,
 ) -> None:
     """Execute RAG search and LLM generation in background thread.
 
@@ -1688,9 +1689,16 @@ def run_chat_generation(
         model: LLM model name.
         limit: Number of RAG context chunks to retrieve.
         use_reformulation: Whether reformulation was used (for display purposes).
+        selected_works: List of work titles to filter search. Empty/None = all works.
     """
     session: Dict[str, Any] = chat_sessions[session_id]
     q: queue.Queue[Dict[str, Any]] = session["queue"]
+
+    # Normalize selected_works (None -> empty list)
+    if selected_works is None:
+        selected_works = []
+    
+    print(f"[Chat Generation] Starting with selected_works={selected_works if selected_works else 'all'}")
 
     try:
         from utils.llm_chat import call_llm, LLMError
@@ -1846,6 +1854,7 @@ def chat_send() -> tuple[Dict[str, Any], int]:
         model (str): Model name.
         limit (int, optional): Number of RAG chunks. Defaults to 5.
         use_reformulation (bool, optional): Use reformulated question. Defaults to True.
+        selected_works (list[str], optional): Work titles to filter search. Defaults to [] (all works).
 
     Returns:
         JSON response with session_id and status.
@@ -1857,7 +1866,8 @@ def chat_send() -> tuple[Dict[str, Any], int]:
           "provider": "ollama",
           "model": "qwen2.5:7b",
           "limit": 5,
-          "use_reformulation": true
+          "use_reformulation": true,
+          "selected_works": ["Ménon", "La pensée-signe"]
         }
 
         Response:
@@ -1894,6 +1904,16 @@ def chat_send() -> tuple[Dict[str, Any], int]:
 
     use_reformulation = data.get("use_reformulation", True)
 
+    # Extract selected_works filter (list of work titles to search in)
+    selected_works = data.get("selected_works", [])
+    if not isinstance(selected_works, list):
+        return {"error": "selected_works must be a list of work titles"}, 400
+    # Ensure all items are strings
+    if selected_works and not all(isinstance(w, str) for w in selected_works):
+        return {"error": "selected_works must contain only strings"}, 400
+    
+    print(f"[Chat] selected_works filter: {selected_works if selected_works else 'None (all works)'}")
+
     # Create session
     session_id = str(uuid.uuid4())
     chat_sessions[session_id] = {
@@ -1908,7 +1928,7 @@ def chat_send() -> tuple[Dict[str, Any], int]:
     # Start background thread
     thread = threading.Thread(
         target=run_chat_generation,
-        args=(session_id, question, provider, model, limit, use_reformulation),
+        args=(session_id, question, provider, model, limit, use_reformulation, selected_works),
         daemon=True,
     )
     thread.start()
