@@ -377,12 +377,14 @@ def hierarchical_search(
 
             # Post-filter sections by author/work (Summary doesn't have work nested object)
             if author_filter or work_filter:
+                print(f"[HIERARCHICAL] Post-filtering {len(sections_data)} sections by work='{work_filter}'")
                 doc_collection = client.collections.get("Document")
                 filtered_sections = []
 
                 for section in sections_data:
                     source_id = section["document_source_id"]
                     if not source_id:
+                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' SKIPPED (no sourceId)")
                         continue
 
                     # Query Document to get work metadata
@@ -395,16 +397,27 @@ def hierarchical_search(
 
                     if doc_result.objects:
                         doc_work = doc_result.objects[0].properties.get("work", {})
+                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' doc_work type={type(doc_work)}, value={doc_work}")
                         if isinstance(doc_work, dict):
+                            work_title = doc_work.get("title", "N/A")
+                            work_author = doc_work.get("author", "N/A")
                             # Check filters
-                            if author_filter and doc_work.get("author") != author_filter:
+                            if author_filter and work_author != author_filter:
+                                print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' FILTERED (author '{work_author}' != '{author_filter}')")
                                 continue
-                            if work_filter and doc_work.get("title") != work_filter:
+                            if work_filter and work_title != work_filter:
+                                print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' FILTERED (work '{work_title}' != '{work_filter}')")
                                 continue
 
-                        filtered_sections.append(section)
+                            print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' KEPT (work='{work_title}')")
+                            filtered_sections.append(section)
+                        else:
+                            print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' SKIPPED (doc_work not a dict)")
+                    else:
+                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' SKIPPED (no doc found for sourceId='{source_id}')")
 
                 sections_data = filtered_sections
+                print(f"[HIERARCHICAL] After filtering: {len(sections_data)} sections remaining")
 
             if not sections_data:
                 # No sections match filters - return empty result
@@ -443,10 +456,18 @@ def hierarchical_search(
                 # This ensures chunks are semantically related to the section
                 section_query = section["summary_text"] or section["title"] or query
 
+                # Build filters: base filters (author/work) + sectionPath filter
+                # Use .like() to match hierarchical sections (e.g., "Chapter 1*" matches "Chapter 1 > Section A")
+                # This ensures each chunk only appears in its own section hierarchy
+                section_path_pattern = f"{section['section_path']}*"
+                section_filters = wvq.Filter.by_property("sectionPath").like(section_path_pattern)
+                if base_filters:
+                    section_filters = base_filters & section_filters
+
                 chunks_result = chunk_collection.query.near_text(
                     query=section_query,
                     limit=chunks_per_section,
-                    filters=base_filters,
+                    filters=section_filters,
                     return_metadata=wvq.MetadataQuery(distance=True),
                 )
 
@@ -460,6 +481,8 @@ def hierarchical_search(
                     }
                     for obj in chunks_result.objects
                 ]
+
+                print(f"[HIERARCHICAL] Section '{section['section_path'][:50]}...' filter='{section_path_pattern[:50]}...' -> {len(section_chunks)} chunks")
 
                 section["chunks"] = section_chunks
                 section["chunks_count"] = len(section_chunks)
@@ -1352,6 +1375,85 @@ def test_llm() -> WerkzeugResponse:
 def test_chat_backend() -> str:
     """Test page for chat backend."""
     return render_template("test_chat_backend.html")
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Works Filter API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/get-works")
+def api_get_works() -> Union[Response, tuple[Response, int]]:
+    """Get list of all available works with metadata for filtering.
+
+    Returns a JSON array of all unique works in the database, sorted by author
+    then title. Each work includes the title, author, and number of chunks.
+
+    Returns:
+        JSON response with array of works:
+        [
+            {"title": "Ménon", "author": "Platon", "chunks_count": 127},
+            ...
+        ]
+
+    Raises:
+        500: If Weaviate connection fails or query errors occur.
+
+    Example:
+        GET /api/get-works
+        Returns: [{"title": "Ménon", "author": "Platon", "chunks_count": 127}, ...]
+    """
+    try:
+        with get_weaviate_client() as client:
+            if client is None:
+                return jsonify({
+                    "error": "Weaviate connection failed",
+                    "message": "Cannot connect to Weaviate database"
+                }), 500
+
+            # Query Chunk collection to get all unique works with counts
+            chunks = client.collections.get("Chunk")
+
+            # Fetch all chunks to aggregate by work
+            # Using a larger limit to get all documents
+            # Note: Don't use return_properties with nested objects (causes gRPC error)
+            # Fetch all objects without specifying properties
+            all_chunks = chunks.query.fetch_objects(limit=10000)
+
+            # Aggregate chunks by work (title + author)
+            works_count: Dict[str, Dict[str, Any]] = {}
+
+            for obj in all_chunks.objects:
+                work_obj = obj.properties.get("work")
+                if work_obj and isinstance(work_obj, dict):
+                    title = work_obj.get("title", "")
+                    author = work_obj.get("author", "")
+
+                    if title:  # Only count if title exists
+                        # Use title as key (assumes unique titles)
+                        if title not in works_count:
+                            works_count[title] = {
+                                "title": title,
+                                "author": author or "Unknown",
+                                "chunks_count": 0
+                            }
+                        works_count[title]["chunks_count"] += 1
+
+            # Convert to list and sort by author, then title
+            works_list = list(works_count.values())
+            works_list.sort(key=lambda w: (w["author"].lower(), w["title"].lower()))
+
+            print(f"[API] /api/get-works: Found {len(works_list)} unique works")
+
+            return jsonify(works_list)
+
+    except Exception as e:
+        print(f"[API] /api/get-works error: {e}")
+        return jsonify({
+            "error": "Database query failed",
+            "message": str(e)
+        }), 500
+
 
 
 @app.route("/chat")
