@@ -1128,15 +1128,15 @@ def diverse_author_search(
         if num_authors == 1:
             # Only one author: take up to 'limit' chunks from that author
             adaptive_chunks_per_author = limit
-            print(f"[Diverse Search] Only 1 author found → taking up to {adaptive_chunks_per_author} chunks")
+            print(f"[Diverse Search] Only 1 author found -> taking up to {adaptive_chunks_per_author} chunks")
         elif num_authors <= 3:
             # Few authors (2-3): take more chunks per author
             adaptive_chunks_per_author = max(chunks_per_author, limit // num_authors)
-            print(f"[Diverse Search] Only {num_authors} authors → taking up to {adaptive_chunks_per_author} chunks per author")
+            print(f"[Diverse Search] Only {num_authors} authors -> taking up to {adaptive_chunks_per_author} chunks per author")
         else:
             # Many authors (4+): stick to original limit for diversity
             adaptive_chunks_per_author = chunks_per_author
-            print(f"[Diverse Search] {num_authors} authors → taking {adaptive_chunks_per_author} chunks per author")
+            print(f"[Diverse Search] {num_authors} authors -> taking {adaptive_chunks_per_author} chunks per author")
 
         final_chunks: List[Dict[str, Any]] = []
         for author, avg_score in top_authors:
