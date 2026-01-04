@@ -212,7 +212,7 @@
                                     <span style="color: var(--color-accent);">📂 {{ section.title[:120] }}{% if section.title|length > 120 %}...{% endif %}</span>
                                 </div>
                                 {% if section.summary_text and section.summary_text != section.title and section.summary_text != section.section_path %}
-                                    <p class="summary-text" style="margin: 0.75rem 0 0 0; padding: 0.75rem; background: rgba(255, 255, 255, 0.5); border-radius: 4px; font-size: 0.9em; color: var(--color-text-main); font-style: italic; line-height: 1.6;">{{ section.summary_text[:250] }}{% if section.summary_text|length > 250 %}...{% endif %}</p>
+                                    <p class="summary-text" style="margin: 0.75rem 0 0 0; padding: 0.75rem; background: rgba(255, 255, 255, 0.5); border-radius: 4px; font-size: 0.9em; color: var(--color-text-main); font-style: italic; line-height: 1.6;">{{ section.summary_text }}</p>
                                 {% endif %}
                                 {% if section.concepts %}
                                     <div class="concepts" style="margin-top: 0.75rem;">
