@@ -12,3 +12,10 @@ __pycache__
 # Node modules (if any)
 node_modules/
 package-lock.json
+
+# Backup and temporary files
+backup_migration_*/
+restoration_log.txt
+restoration_remaining_log.txt
+summary_generation_progress.json
+nul

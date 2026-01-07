@@ -26,7 +26,7 @@ Collections:
 
     **Chunk** (vectorized with text2vec-transformers):
         Text fragments optimized for semantic search (200-800 chars).
-        Vectorized fields: text, keywords.
+        Vectorized fields: text, summary, keywords.
         Non-vectorized fields: sectionPath, chapterTitle, unitType, orderIndex.
         Includes nested Document and Work references.
 
@@ -36,15 +36,13 @@ Collections:
         Includes nested Document reference.
 
 Vectorization Strategy:
-    - Only Chunk.text, Chunk.keywords, Summary.text, and Summary.concepts are vectorized
+    - Only Chunk.text, Chunk.summary, Chunk.keywords, Summary.text, and Summary.concepts are vectorized
     - Uses text2vec-transformers (BAAI/bge-m3 with 1024-dim via Docker)
     - Metadata fields use skip_vectorization=True for filtering only
     - Work and Document collections have no vectorizer (metadata only)
 
 Vector Index Configuration (2026-01):
-    - **Dynamic Index**: Automatically switches from flat to HNSW based on collection size
-        - Chunk: Switches at 50,000 vectors
-        - Summary: Switches at 10,000 vectors
+    - **HNSW Index**: Hierarchical Navigable Small World for efficient search
     - **Rotational Quantization (RQ)**: Reduces memory footprint by ~75%
         - Minimal accuracy loss (<1%)
         - Essential for scaling to 100k+ chunks
@@ -233,13 +231,13 @@ def create_chunk_collection(client: weaviate.WeaviateClient) -> None:
         client: Connected Weaviate client.
 
     Note:
-        Uses text2vec-transformers for vectorizing 'text' and 'keywords' fields.
+        Uses text2vec-transformers for vectorizing 'text', 'summary', and 'keywords' fields.
         Other fields have skip_vectorization=True for filtering only.
 
         Vector Index Configuration:
-            - Dynamic index: starts with flat, switches to HNSW at 50k vectors
+            - HNSW index for efficient similarity search
             - Rotational Quantization (RQ): reduces memory by ~75% with minimal accuracy loss
-            - Optimized for scaling from small (1k) to large (1M+) collections
+            - Optimized for scaling to large (100k+) collections
     """
     client.collections.create(
         name="Chunk",
@@ -247,26 +245,23 @@ def create_chunk_collection(client: weaviate.WeaviateClient) -> None:
         vectorizer_config=wvc.Configure.Vectorizer.text2vec_transformers(
             vectorize_collection_name=False,
         ),
-        # Dynamic index with RQ for optimal memory/performance trade-off
-        vector_index_config=wvc.Configure.VectorIndex.dynamic(
-            threshold=50000,  # Switch to HNSW at 50k chunks
-            hnsw=wvc.Reconfigure.VectorIndex.hnsw(
-                quantizer=wvc.Configure.VectorIndex.Quantizer.rq(
-                    enabled=True,
-                    # RQ provides ~75% memory reduction with <1% accuracy loss
-                    # Perfect for scaling philosophical text collections
-                ),
-                distance_metric=wvc.VectorDistances.COSINE,  # BGE-M3 uses cosine similarity
-            ),
-            flat=wvc.Reconfigure.VectorIndex.flat(
-                distance_metric=wvc.VectorDistances.COSINE,
-            ),
+        # HNSW index with RQ for optimal memory/performance trade-off
+        vector_index_config=wvc.Configure.VectorIndex.hnsw(
+            distance_metric=wvc.VectorDistances.COSINE,  # BGE-M3 uses cosine similarity
+            quantizer=wvc.Configure.VectorIndex.Quantizer.rq(),
+            # RQ provides ~75% memory reduction with <1% accuracy loss
+            # Perfect for scaling philosophical text collections
         ),
         properties=[
             # Main content (vectorized)
             wvc.Property(
                 name="text",
                 description="The text content to be vectorized (200-800 chars optimal).",
+                data_type=wvc.DataType.TEXT,
+            ),
+            wvc.Property(
+                name="summary",
+                description="LLM-generated summary of this chunk (100-200 words, VECTORIZED).",
                 data_type=wvc.DataType.TEXT,
             ),
             # Hierarchical context (not vectorized, for filtering)
@@ -350,9 +345,9 @@ def create_summary_collection(client: weaviate.WeaviateClient) -> None:
         Uses text2vec-transformers for vectorizing summary text.
 
         Vector Index Configuration:
-            - Dynamic index: starts with flat, switches to HNSW at 10k vectors
+            - HNSW index for efficient similarity search
             - Rotational Quantization (RQ): reduces memory by ~75%
-            - Lower threshold than Chunk (summaries are fewer and shorter)
+            - Optimized for summaries (shorter, more uniform text)
     """
     client.collections.create(
         name="Summary",
@@ -360,19 +355,11 @@ def create_summary_collection(client: weaviate.WeaviateClient) -> None:
         vectorizer_config=wvc.Configure.Vectorizer.text2vec_transformers(
             vectorize_collection_name=False,
         ),
-        # Dynamic index with RQ (lower threshold for summaries)
-        vector_index_config=wvc.Configure.VectorIndex.dynamic(
-            threshold=10000,  # Switch to HNSW at 10k summaries (fewer than chunks)
-            hnsw=wvc.Reconfigure.VectorIndex.hnsw(
-                quantizer=wvc.Configure.VectorIndex.Quantizer.rq(
-                    enabled=True,
-                    # RQ optimal for summaries (shorter, more uniform text)
-                ),
-                distance_metric=wvc.VectorDistances.COSINE,
-            ),
-            flat=wvc.Reconfigure.VectorIndex.flat(
-                distance_metric=wvc.VectorDistances.COSINE,
-            ),
+        # HNSW index with RQ for optimal memory/performance trade-off
+        vector_index_config=wvc.Configure.VectorIndex.hnsw(
+            distance_metric=wvc.VectorDistances.COSINE,
+            quantizer=wvc.Configure.VectorIndex.Quantizer.rq(),
+            # RQ optimal for summaries (shorter, more uniform text)
         ),
         properties=[
             wvc.Property(
@@ -537,16 +524,16 @@ def print_summary() -> None:
     print("\n✓ Architecture:")
     print("  - Work: Source unique pour author/title")
     print("  - Document: Métadonnées d'édition avec référence vers Work")
-    print("  - Chunk: Fragments vectorisés (text + keywords)")
-    print("  - Summary: Résumés de chapitres vectorisés (text)")
+    print("  - Chunk: Fragments vectorisés (text + summary + keywords)")
+    print("  - Summary: Résumés de chapitres vectorisés (text + concepts)")
     print("\n✓ Vectorisation:")
     print("  - Work:    NONE")
     print("  - Document: NONE")
-    print("  - Chunk:   text2vec (text + keywords)")
-    print("  - Summary: text2vec (text)")
+    print("  - Chunk:   text2vec (text + summary + keywords)")
+    print("  - Summary: text2vec (text + concepts)")
     print("\n✓ Index Vectoriel (Optimisation 2026):")
-    print("  - Chunk:   Dynamic (flat → HNSW @ 50k) + RQ (~75% moins de RAM)")
-    print("  - Summary: Dynamic (flat → HNSW @ 10k) + RQ")
+    print("  - Chunk:   HNSW + RQ (~75% moins de RAM)")
+    print("  - Summary: HNSW + RQ")
     print("  - Distance: Cosine (compatible BGE-M3)")
     print("=" * 80)
 
