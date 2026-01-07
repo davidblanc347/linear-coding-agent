@@ -188,7 +188,7 @@ Work (no vectorizer)
         ├─ work: {title, author} (nested)
         │
         ├─► Chunk (VECTORIZED ⭐)
-        │     ├─ text (vectorized), keywords (vectorized)
+        │     ├─ text (vectorized), summary (vectorized), keywords (vectorized)
         │     ├─ sectionPath, chapterTitle, unitType, orderIndex, language
         │     ├─ work: {title, author} (nested)
         │     └─ document: {sourceId, edition} (nested)
@@ -214,7 +214,7 @@ Work (no vectorizer)
 
 **Chunk ⭐** (text2vec-transformers)
 - Fragment de texte optimisé pour la recherche sémantique (200-800 caractères)
-- Propriétés vectorisées : `text`, `keywords`
+- Propriétés vectorisées : `text`, `summary` (résumé LLM du chunk), `keywords`
 - Propriétés non-vectorisées : `sectionPath`, `chapterTitle`, `unitType`, `orderIndex`, `language`
 - Références nested : `work: {title, author}`, `document: {sourceId, edition}`
 
@@ -232,9 +232,15 @@ Work (no vectorizer)
 - Trade-off : Petite duplication contrôlée pour performance maximale
 
 **Vectorisation Sélective:**
-- Seuls `Chunk.text/keywords` et `Summary.text/concepts` sont vectorisés
+- Seuls `Chunk.text/summary/keywords` et `Summary.text/concepts` sont vectorisés
 - Métadonnées utilisent `skip_vectorization=True` pour filtrage rapide
-- Gain : 6× moins de calculs vs vectorisation complète
+- Gain : ~6× moins de calculs vs vectorisation complète
+
+**Index Vectoriel HNSW + RQ (2026-01):**
+- **HNSW** (Hierarchical Navigable Small World) : Index optimisé pour recherche rapide
+- **RQ** (Rotational Quantization) : Compression des vecteurs (~75% réduction mémoire)
+- **Distance** : Cosine similarity (compatible BGE-M3)
+- **Performance** : <1% perte de précision, scalable jusqu'à 100k+ chunks
 
 ---
 
@@ -498,25 +504,14 @@ Le fichier `docker-compose.yml` configure :
 - **Authentification:** Désactivée (dev local)
 
 ### text2vec-transformers
-- **Modèle:** `baai-bge-m3` (BAAI/bge-m3)
+- **Modèle:** `baai-bge-m3-onnx` (BAAI/bge-m3, version ONNX)
 - **Dimensions:** 1024 (2.7x plus riche que MiniLM-L6)
 - **Context Window:** 8192 tokens (16x plus long que MiniLM-L6)
-- **Mode:** GPU accelerated (CUDA) with CPU fallback
+- **Runtime:** ONNX CPU-optimized (AVX2)
 - **Multilingue:** Support supérieur pour grec, latin, français, anglais
+- **Worker Timeout:** 600s (pour gérer les chunks très longs)
 
-```yaml
-# Configuration GPU (optionnel)
-text2vec-transformers:
-  environment:
-    - ENABLE_CUDA=1
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: 1
-            capabilities: [gpu]
-```
+**Note GPU:** La version ONNX de BGE-M3 est CPU-only (pas de support CUDA natif dans ONNX runtime). Pour l'accélération GPU, il faudrait utiliser NVIDIA NIM (architecture différente).
 
 ---
 
@@ -699,7 +694,10 @@ library_rag/
 │   ├── llm_chunker.py          # LLM: Chunking sémantique
 │   ├── llm_cleaner.py          # Nettoyage chunks
 │   ├── llm_validator.py        # LLM: Validation + concepts
+│   ├── llm_summarizer.py       # LLM: Génération résumés chunks (optionnel)
 │   ├── weaviate_ingest.py      # Ingestion batch Weaviate
+│   ├── generate_chunk_summaries.py  # Script génération résumés par batch
+│   ├── generate_all_summaries.py    # Script génération pour tous les docs
 │   ├── toc_extractor.py        # Extraction TOC (stratégies alternatives)
 │   ├── toc_extractor_markdown.py
 │   └── toc_extractor_visual.py
@@ -838,7 +836,7 @@ python reingest_from_cache.py
 
 **Rollback:** Restaurer `docker-compose.yml.backup` si nécessaire (~15 min).
 
-**GPU:** BGE-M3 utilise ~2GB VRAM. Compatible RTX 4070 (12GB) avec Ollama/Qwen en parallèle.
+**Note Technique:** La version ONNX de BGE-M3 est CPU-only (pas de VRAM utilisée). Pour l'accélération GPU, il faudrait utiliser NVIDIA NIM (architecture différente).
 
 ---
 
