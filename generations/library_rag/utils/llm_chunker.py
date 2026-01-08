@@ -52,8 +52,14 @@ from .llm_structurer import (
 )
 from .llm_cleaner import clean_page_markers, is_chunk_valid
 from .types import LLMProvider, SemanticChunk
+from .llm_chunker_improved import simple_chunk_with_overlap, validate_chunk_size
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+# Chunk size limits (2024-01 optimization)
+MAX_CHUNK_WORDS = 1000  # Hard limit to stay within BGE-M3 context
+OVERLAP_WORDS = 100     # Overlap for context preservation
+FORCE_SIMPLE_CHUNKING_THRESHOLD = 1500  # Words - force simple chunking above this
 
 
 # =============================================================================
@@ -221,8 +227,43 @@ def chunk_section_with_llm(
     # Nettoyer le contenu
     content: str = clean_page_markers(section_content)
 
-    # Si le contenu est court, ne pas découper
+    # Compter les mots
     word_count: int = len(content.split())
+
+    # FORCE SIMPLE CHUNKING if section is too long (> 1500 words)
+    # This prevents giant chunks that exceed BGE-M3 limits
+    if word_count > FORCE_SIMPLE_CHUNKING_THRESHOLD:
+        logger.warning(
+            f"Section '{section_title}' is too long ({word_count} words), "
+            f"forcing simple chunking with overlap"
+        )
+        simple_texts = simple_chunk_with_overlap(
+            content,
+            max_words=MAX_CHUNK_WORDS,
+            overlap_words=OVERLAP_WORDS
+        )
+
+        # Convert to SemanticChunk format
+        result_chunks: List[SemanticChunk] = []
+        for i, text in enumerate(simple_texts):
+            para_num = extract_paragraph_number(text)
+            chunk: SemanticChunk = {
+                "text": text,
+                "summary": f"{section_title} (partie {i+1}/{len(simple_texts)})",
+                "concepts": [],
+                "type": "main_content",
+                "section_level": section_level,
+            }
+            if para_num is not None:
+                chunk["paragraph_number"] = para_num
+            if subsection_title and subsection_title != section_title:
+                chunk["subsection_title"] = subsection_title
+            result_chunks.append(chunk)
+
+        logger.info(f"Section split into {len(result_chunks)} chunks with overlap")
+        return result_chunks
+
+    # Si le contenu est court, ne pas découper
     if word_count < target_chunk_size * 0.8:
         para_num: Optional[int] = extract_paragraph_number(content)
         chunk: SemanticChunk = {
@@ -320,39 +361,66 @@ RÉPONDS avec un JSON entre <JSON></JSON>:
 
                 valid_chunks.append(chunk_data)
 
-        # Si aucun chunk valide, retourner le contenu complet
+        # Si aucun chunk valide, utiliser simple chunking avec overlap
         if not valid_chunks:
-            logger.warning(f"Aucun chunk valide pour '{section_title}', retour contenu complet")
-            para_num = extract_paragraph_number(content)
-            fallback: SemanticChunk = {
-                "text": content,
-                "summary": section_title,
-                "concepts": [],
-                "type": "main_content",
-                "section_level": section_level,
-            }
-            if para_num is not None:
-                fallback["paragraph_number"] = para_num
-            return [fallback]
+            logger.warning(
+                f"Aucun chunk valide pour '{section_title}', "
+                f"fallback vers simple chunking avec overlap"
+            )
+            simple_texts = simple_chunk_with_overlap(
+                content,
+                max_words=MAX_CHUNK_WORDS,
+                overlap_words=OVERLAP_WORDS
+            )
+
+            fallback_chunks: List[SemanticChunk] = []
+            for i, text in enumerate(simple_texts):
+                para_num = extract_paragraph_number(text)
+                chunk_data: SemanticChunk = {
+                    "text": text,
+                    "summary": f"{section_title} (partie {i+1}/{len(simple_texts)})",
+                    "concepts": [],
+                    "type": "main_content",
+                    "section_level": section_level,
+                }
+                if para_num is not None:
+                    chunk_data["paragraph_number"] = para_num
+                fallback_chunks.append(chunk_data)
+
+            logger.info(f"Fallback: section split into {len(fallback_chunks)} chunks")
+            return fallback_chunks
 
         logger.info(f"Section '{section_title}' découpée en {len(valid_chunks)} chunks")
         return valid_chunks
 
     except Exception as e:
         logger.error(f"Erreur chunking LLM: {e}")
-        # Fallback: retourner le contenu complet
-        para_num = extract_paragraph_number(content)
-        fallback_err: SemanticChunk = {
-            "text": content,
-            "summary": section_title,
-            "concepts": [],
-            "type": "main_content",
-            "section_level": section_level,
-            "error": str(e),
-        }
-        if para_num is not None:
-            fallback_err["paragraph_number"] = para_num
-        return [fallback_err]
+        # Fallback: utiliser simple chunking avec overlap
+        logger.warning(f"Exception LLM, fallback vers simple chunking avec overlap")
+
+        simple_texts = simple_chunk_with_overlap(
+            content,
+            max_words=MAX_CHUNK_WORDS,
+            overlap_words=OVERLAP_WORDS
+        )
+
+        error_chunks: List[SemanticChunk] = []
+        for i, text in enumerate(simple_texts):
+            para_num = extract_paragraph_number(text)
+            chunk_data: SemanticChunk = {
+                "text": text,
+                "summary": f"{section_title} (partie {i+1}/{len(simple_texts)})",
+                "concepts": [],
+                "type": "main_content",
+                "section_level": section_level,
+                "error": f"LLM failed: {str(e)}",
+            }
+            if para_num is not None:
+                chunk_data["paragraph_number"] = para_num
+            error_chunks.append(chunk_data)
+
+        logger.info(f"Error fallback: section split into {len(error_chunks)} chunks")
+        return error_chunks
 
 
 def simple_chunk_by_paragraphs(

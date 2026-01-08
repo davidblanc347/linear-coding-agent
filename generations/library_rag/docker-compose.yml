@@ -31,6 +31,10 @@ services:
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"   # ok pour dev/local
       PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
       CLUSTER_HOSTNAME: "node1"
+      CLUSTER_GOSSIP_BIND_PORT: "7946"
+      CLUSTER_DATA_BIND_PORT: "7947"
+      # Fix for "No private IP address found" error
+      CLUSTER_JOIN: ""
       DEFAULT_VECTORIZER_MODULE: "text2vec-transformers"
       ENABLE_MODULES: "text2vec-transformers"
       TRANSFORMERS_INFERENCE_API: "http://text2vec-transformers:8080"
@@ -56,6 +60,8 @@ services:
     #   - Current setup: CPU-only with AVX2 optimization (functional but slower)
     image: cr.weaviate.io/semitechnologies/transformers-inference:baai-bge-m3-onnx-latest
     restart: on-failure:0
+    ports:
+      - "8090:8080"  # Expose vectorizer API for manual vectorization
     environment:
       # ONNX runtime - CPU only (CUDA not supported in ONNX version)
       ENABLE_CUDA: "0"
