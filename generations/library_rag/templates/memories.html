@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Memory – Thoughts & Messages{% endblock %}
+
+{% block content %}
+<section class="section">
+    <h1 class="text-center">Memory System</h1>
+    <p class="lead text-center">Recherche sémantique dans les pensées et messages d'Ikario</p>
+
+    <div class="ornament">· · ·</div>
+
+    <!-- Statistics -->
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-number">{{ stats.thoughts }}</div>
+            <div class="stat-label">Pensées</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">{{ stats.messages }}</div>
+            <div class="stat-label">Messages</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">{{ stats.conversations }}</div>
+            <div class="stat-label">Conversations</div>
+        </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Search Thoughts -->
+    <div class="card">
+        <h2>🧠 Rechercher dans les pensées</h2>
+        <div class="form-row">
+            <input
+                type="text"
+                id="thoughtQuery"
+                class="form-control"
+                placeholder="Ex: réflexions sur la conscience..."
+                style="flex: 1;"
+            >
+            <button onclick="searchThoughts()" class="btn btn-primary">Rechercher</button>
+        </div>
+        <div id="thoughtResults" class="mt-3"></div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Search Messages -->
+    <div class="card">
+        <h2>💬 Rechercher dans les messages</h2>
+        <div class="form-row">
+            <input
+                type="text"
+                id="messageQuery"
+                class="form-control"
+                placeholder="Ex: discussions sur l'intelligence artificielle..."
+                style="flex: 1;"
+            >
+            <button onclick="searchMessages()" class="btn btn-primary">Rechercher</button>
+        </div>
+        <div id="messageResults" class="mt-3"></div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="text-center">
+        <a href="/conversations" class="btn">Voir toutes les conversations</a>
+    </div>
+</section>
+
+<script>
+async function searchThoughts() {
+    const query = document.getElementById('thoughtQuery').value;
+    const resultsDiv = document.getElementById('thoughtResults');
+
+    if (!query.trim()) {
+        resultsDiv.innerHTML = '<p class="text-muted">Entrez une requête de recherche</p>';
+        return;
+    }
+
+    resultsDiv.innerHTML = '<p class="text-muted">Recherche en cours...</p>';
+
+    try {
+        const response = await fetch('/api/memories/search-thoughts', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({query, limit: 10})
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.results && data.results.length > 0) {
+            let html = '<div class="results-list">';
+            data.results.forEach((thought, idx) => {
+                html += `
+                    <div class="result-item">
+                        <div class="result-header">
+                            <span class="badge">${thought.thought_type}</span>
+                            <span class="text-muted">${new Date(thought.timestamp).toLocaleDateString('fr-FR')}</span>
+                        </div>
+                        <div class="result-text">${thought.content}</div>
+                        ${thought.concepts && thought.concepts.length > 0 ?
+                            `<div class="mt-1">
+                                <strong>Concepts:</strong> ${thought.concepts.join(', ')}
+                            </div>` : ''}
+                    </div>
+                `;
+            });
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = '<p class="text-muted">Aucun résultat trouvé</p>';
+        }
+    } catch (error) {
+        resultsDiv.innerHTML = `<p class="text-danger">Erreur: ${error.message}</p>`;
+    }
+}
+
+async function searchMessages() {
+    const query = document.getElementById('messageQuery').value;
+    const resultsDiv = document.getElementById('messageResults');
+
+    if (!query.trim()) {
+        resultsDiv.innerHTML = '<p class="text-muted">Entrez une requête de recherche</p>';
+        return;
+    }
+
+    resultsDiv.innerHTML = '<p class="text-muted">Recherche en cours...</p>';
+
+    try {
+        const response = await fetch('/api/memories/search-messages', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({query, limit: 10})
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.results && data.results.length > 0) {
+            let html = '<div class="results-list">';
+            data.results.forEach((msg, idx) => {
+                html += `
+                    <div class="result-item">
+                        <div class="result-header">
+                            <span class="badge">${msg.role}</span>
+                            <span class="text-muted">${new Date(msg.timestamp).toLocaleDateString('fr-FR')}</span>
+                            <span class="text-muted">Conv: ${msg.conversation_id}</span>
+                        </div>
+                        <div class="result-text">${msg.content.substring(0, 300)}${msg.content.length > 300 ? '...' : ''}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = '<p class="text-muted">Aucun résultat trouvé</p>';
+        }
+    } catch (error) {
+        resultsDiv.innerHTML = `<p class="text-danger">Erreur: ${error.message}</p>`;
+    }
+}
+
+// Allow Enter key to trigger search
+document.getElementById('thoughtQuery').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') searchThoughts();
+});
+
+document.getElementById('messageQuery').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') searchMessages();
+});
+</script>
+{% endblock %}

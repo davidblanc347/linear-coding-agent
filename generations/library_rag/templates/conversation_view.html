@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Conversation: {{ conversation.conversation_id }}{% endblock %}
+
+{% block content %}
+<section class="section">
+    <h1 class="text-center">{{ conversation.conversation_id }}</h1>
+    <p class="lead text-center">Conversation David-Ikario</p>
+
+    <div class="ornament">· · ·</div>
+
+    <!-- Conversation Metadata -->
+    <div class="card">
+        <h2>📝 Détails de la conversation</h2>
+        <div class="mt-2">
+            <p><strong>Catégorie:</strong> <span class="badge">{{ conversation.category }}</span></p>
+            <p><strong>Participants:</strong> {{ conversation.participants|join(', ') if conversation.participants else 'N/A' }}</p>
+            <p><strong>Nombre de messages:</strong> {{ conversation.message_count }}</p>
+            <p><strong>Date de début:</strong> {{ conversation.timestamp_start[:19].replace('T', ' ') if conversation.timestamp_start else 'Inconnue' }}</p>
+            {% if conversation.timestamp_end %}
+            <p><strong>Date de fin:</strong> {{ conversation.timestamp_end[:19].replace('T', ' ') }}</p>
+            {% endif %}
+            {% if conversation.tags and conversation.tags|length > 0 %}
+            <p><strong>Tags:</strong> {{ conversation.tags|join(', ') }}</p>
+            {% endif %}
+        </div>
+
+        {% if conversation.summary %}
+        <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--color-bg-secondary);">
+        <div>
+            <strong>Résumé:</strong>
+            <p style="margin-top: 0.5rem; color: var(--color-text-main);">{{ conversation.summary }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <hr class="divider">
+
+    <!-- Messages -->
+    <div class="card">
+        <h2>💬 Messages ({{ messages|length }})</h2>
+
+        {% if messages %}
+            <div class="mt-2">
+                {% for msg in messages %}
+                <div class="message-item" style="margin-bottom: 1.5rem; padding: 1rem; background: {% if msg.role == 'user' %}var(--color-bg-secondary){% else %}#fff{% endif %}; border-radius: 8px; border-left: 4px solid {% if msg.role == 'user' %}var(--color-accent){% else %}var(--color-accent-alt){% endif %};">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <span class="badge">{{ msg.role }}</span>
+                        <span class="text-muted" style="font-size: 0.875rem;">
+                            {{ msg.timestamp[:19].replace('T', ' ') if msg.timestamp else 'Date inconnue' }}
+                            | Index: {{ msg.order_index }}
+                        </span>
+                    </div>
+                    <div style="line-height: 1.6; white-space: pre-wrap;">{{ msg.content }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-muted mt-2">Aucun message dans cette conversation</p>
+        {% endif %}
+    </div>
+
+    <div class="text-center mt-3">
+        <a href="/conversations" class="btn">← Retour aux conversations</a>
+    </div>
+</section>
+
+<style>
+.message-item {
+    transition: transform 0.2s ease;
+}
+
+.message-item:hover {
+    transform: translateX(4px);
+}
+</style>
+{% endblock %}

@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Conversations{% endblock %}
+
+{% block content %}
+<section class="section">
+    <h1 class="text-center">Conversations Ikario</h1>
+    <p class="lead text-center">Liste des conversations David-Ikario</p>
+
+    <div class="ornament">· · ·</div>
+
+    <!-- Search Box -->
+    <div class="card">
+        <h2>🔍 Recherche sémantique</h2>
+        <div class="form-row">
+            <input
+                type="text"
+                id="searchQuery"
+                class="form-control"
+                placeholder="Ex: discussions sur la philosophie..."
+                style="flex: 1;"
+            >
+            <button onclick="searchConversations()" class="btn btn-primary">Rechercher</button>
+        </div>
+        <div id="searchResults" class="mt-3"></div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Conversations List -->
+    <div class="card">
+        <h2>📚 Toutes les conversations ({{ conversations|length }})</h2>
+
+        {% if conversations %}
+            <div class="results-list mt-2">
+                {% for conv in conversations %}
+                <div class="result-item">
+                    <div class="result-header">
+                        <a href="/conversation/{{ conv.conversation_id }}" style="font-weight: 600;">
+                            {{ conv.conversation_id }}
+                        </a>
+                        <span class="badge">{{ conv.category }}</span>
+                        <span class="text-muted">{{ conv.message_count }} messages</span>
+                    </div>
+                    <div class="result-text">{{ conv.summary }}</div>
+                    <div class="result-meta">
+                        <span class="text-muted">
+                            {{ conv.timestamp_start[:10] if conv.timestamp_start else 'Date inconnue' }}
+                        </span>
+                        <span class="text-muted">
+                            Participants: {{ conv.participants|join(', ') if conv.participants else 'N/A' }}
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-muted mt-2">Aucune conversation trouvée</p>
+        {% endif %}
+    </div>
+
+    <div class="text-center mt-3">
+        <a href="/memories" class="btn">Retour aux recherches Memory</a>
+    </div>
+</section>
+
+<script>
+async function searchConversations() {
+    const query = document.getElementById('searchQuery').value;
+    const resultsDiv = document.getElementById('searchResults');
+
+    if (!query.trim()) {
+        resultsDiv.innerHTML = '<p class="text-muted">Entrez une requête de recherche</p>';
+        return;
+    }
+
+    resultsDiv.innerHTML = '<p class="text-muted">Recherche en cours...</p>';
+
+    try {
+        const response = await fetch('/api/conversations/search', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({query, limit: 10})
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.results && data.results.length > 0) {
+            let html = '<div class="results-list">';
+            data.results.forEach((conv, idx) => {
+                html += `
+                    <div class="result-item">
+                        <div class="result-header">
+                            <a href="/conversation/${conv.conversation_id}" style="font-weight: 600;">
+                                ${conv.conversation_id}
+                            </a>
+                            <span class="badge">${conv.category}</span>
+                            <span class="text-muted">${conv.message_count} messages</span>
+                        </div>
+                        <div class="result-text">${conv.summary}</div>
+                        <div class="result-meta">
+                            <span class="text-muted">
+                                ${conv.timestamp_start ? conv.timestamp_start.substring(0,10) : 'Date inconnue'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = '<p class="text-muted">Aucun résultat trouvé</p>';
+        }
+    } catch (error) {
+        resultsDiv.innerHTML = `<p class="text-danger">Erreur: ${error.message}</p>';
+    }
+}
+
+// Allow Enter key to trigger search
+document.getElementById('searchQuery').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') searchConversations();
+});
+</script>
+{% endblock %}
