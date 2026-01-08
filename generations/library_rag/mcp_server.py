@@ -62,6 +62,31 @@ from mcp_tools import (
     PDFProcessingError,
 )
 
+# Memory MCP Tools (added for unified Memory + Library system)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from memory.mcp import (
+    # Thought tools
+    AddThoughtInput,
+    SearchThoughtsInput,
+    add_thought_handler,
+    search_thoughts_handler,
+    get_thought_handler,
+    # Message tools
+    AddMessageInput,
+    GetMessagesInput,
+    SearchMessagesInput,
+    add_message_handler,
+    get_messages_handler,
+    search_messages_handler,
+    # Conversation tools
+    GetConversationInput,
+    SearchConversationsInput,
+    ListConversationsInput,
+    get_conversation_handler,
+    search_conversations_handler,
+    list_conversations_handler,
+)
+
 # =============================================================================
 # Logging Configuration
 # =============================================================================
@@ -549,6 +574,264 @@ async def delete_document(
     )
     result = await delete_document_handler(input_data)
     return result.model_dump(mode='json')
+
+
+# =============================================================================
+# Memory Tools (Thoughts, Messages, Conversations)
+# =============================================================================
+
+
+@mcp.tool()
+async def add_thought(
+    content: str,
+    thought_type: str = "reflection",
+    trigger: str = "",
+    concepts: list[str] | None = None,
+    privacy_level: str = "private",
+) -> Dict[str, Any]:
+    """
+    Add a new thought to the Memory system.
+
+    Args:
+        content: The thought content.
+        thought_type: Type (reflection, question, intuition, observation, etc.).
+        trigger: What triggered this thought (optional).
+        concepts: Related concepts/tags (optional).
+        privacy_level: Privacy level (private, shared, public).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether thought was added successfully
+        - uuid: UUID of the created thought
+        - content: Preview of the thought content
+        - thought_type: The thought type
+    """
+    input_data = AddThoughtInput(
+        content=content,
+        thought_type=thought_type,
+        trigger=trigger,
+        concepts=concepts or [],
+        privacy_level=privacy_level,
+    )
+    result = await add_thought_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def search_thoughts(
+    query: str,
+    limit: int = 10,
+    thought_type_filter: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Search thoughts using semantic similarity.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of results (1-100, default 10).
+        thought_type_filter: Filter by thought type (optional).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether search succeeded
+        - query: The original search query
+        - results: List of matching thoughts
+        - count: Number of results returned
+    """
+    input_data = SearchThoughtsInput(
+        query=query,
+        limit=limit,
+        thought_type_filter=thought_type_filter,
+    )
+    result = await search_thoughts_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def get_thought(uuid: str) -> Dict[str, Any]:
+    """
+    Get a specific thought by UUID.
+
+    Args:
+        uuid: Thought UUID.
+
+    Returns:
+        Dictionary containing complete thought data or error message.
+    """
+    result = await get_thought_handler(uuid)
+    return result
+
+
+@mcp.tool()
+async def add_message(
+    content: str,
+    role: str,
+    conversation_id: str,
+    order_index: int = 0,
+) -> Dict[str, Any]:
+    """
+    Add a new message to a conversation.
+
+    Args:
+        content: Message content.
+        role: Role (user, assistant, system).
+        conversation_id: Conversation identifier.
+        order_index: Position in conversation (default 0).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether message was added successfully
+        - uuid: UUID of the created message
+        - content: Preview of the message content
+        - role: The message role
+        - conversation_id: The conversation ID
+    """
+    input_data = AddMessageInput(
+        content=content,
+        role=role,
+        conversation_id=conversation_id,
+        order_index=order_index,
+    )
+    result = await add_message_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def get_messages(
+    conversation_id: str,
+    limit: int = 50,
+) -> Dict[str, Any]:
+    """
+    Get all messages from a conversation in order.
+
+    Args:
+        conversation_id: Conversation identifier.
+        limit: Maximum messages to return (1-500, default 50).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether query succeeded
+        - conversation_id: The conversation ID
+        - messages: List of messages in order
+        - count: Number of messages returned
+    """
+    input_data = GetMessagesInput(
+        conversation_id=conversation_id,
+        limit=limit,
+    )
+    result = await get_messages_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def search_messages(
+    query: str,
+    limit: int = 10,
+    conversation_id_filter: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Search messages using semantic similarity.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of results (1-100, default 10).
+        conversation_id_filter: Filter by conversation ID (optional).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether search succeeded
+        - query: The original search query
+        - results: List of matching messages
+        - count: Number of results returned
+    """
+    input_data = SearchMessagesInput(
+        query=query,
+        limit=limit,
+        conversation_id_filter=conversation_id_filter,
+    )
+    result = await search_messages_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def get_conversation(conversation_id: str) -> Dict[str, Any]:
+    """
+    Get a specific conversation by ID.
+
+    Args:
+        conversation_id: Conversation identifier.
+
+    Returns:
+        Dictionary containing:
+        - success: Whether conversation was found
+        - conversation_id: The conversation ID
+        - category: Conversation category
+        - summary: Conversation summary
+        - timestamp_start: Start time
+        - timestamp_end: End time
+        - participants: List of participants
+        - tags: Semantic tags
+        - message_count: Number of messages
+    """
+    input_data = GetConversationInput(conversation_id=conversation_id)
+    result = await get_conversation_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def search_conversations(
+    query: str,
+    limit: int = 10,
+    category_filter: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Search conversations using semantic similarity.
+
+    Args:
+        query: Search query text.
+        limit: Maximum number of results (1-50, default 10).
+        category_filter: Filter by category (optional).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether search succeeded
+        - query: The original search query
+        - results: List of matching conversations
+        - count: Number of results returned
+    """
+    input_data = SearchConversationsInput(
+        query=query,
+        limit=limit,
+        category_filter=category_filter,
+    )
+    result = await search_conversations_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def list_conversations(
+    limit: int = 20,
+    category_filter: str | None = None,
+) -> Dict[str, Any]:
+    """
+    List all conversations with optional filtering.
+
+    Args:
+        limit: Maximum conversations to return (1-100, default 20).
+        category_filter: Filter by category (optional).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether query succeeded
+        - conversations: List of conversations
+        - count: Number of conversations returned
+    """
+    input_data = ListConversationsInput(
+        limit=limit,
+        category_filter=category_filter,
+    )
+    result = await list_conversations_handler(input_data)
+    return result
 
 
 # =============================================================================

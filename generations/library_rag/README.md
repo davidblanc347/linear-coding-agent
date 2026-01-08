@@ -451,7 +451,101 @@ filter_by_author(author="Platon")
 delete_document(source_id="platon-menon", confirm=true)
 ```
 
-Pour plus de détails, voir la documentation complète dans `.claude/CLAUDE.md`.
+### Outils MCP Memory (9 outils intégrés - Phase 4)
+
+**Système de Mémoire Unifié** : Le serveur MCP intègre désormais 9 outils pour gérer un système de mémoire (Thoughts, Messages, Conversations) utilisant Weaviate + GPU embeddings. Ces outils permettent à Claude Desktop de créer, rechercher et gérer des pensées, messages et conversations de manière persistante.
+
+**Architecture Memory** :
+- **Backend** : Weaviate 1.34.4 (collections Thought, Message, Conversation)
+- **Embeddings** : BAAI/bge-m3 GPU (1024-dim, RTX 4070, PyTorch 2.6.0+cu124)
+- **Handlers** : `memory/mcp/` (thought_tools, message_tools, conversation_tools)
+- **Données** : 102 Thoughts, 377 Messages, 12 Conversations (au 2025-01-08)
+
+#### Thought Tools (3)
+
+**1. add_thought** - Ajouter une pensée au système
+```
+add_thought(
+    content="Exploring vector databases for semantic search",
+    thought_type="observation",  # reflection, question, intuition, observation
+    trigger="Research session",
+    concepts=["weaviate", "embeddings", "gpu"],
+    privacy_level="private"  # private, shared, public
+)
+```
+
+**2. search_thoughts** - Recherche sémantique dans les pensées
+```
+search_thoughts(
+    query="vector databases GPU",
+    limit=10,
+    thought_type_filter="observation"  # optionnel
+)
+```
+
+**3. get_thought** - Récupérer une pensée par UUID
+```
+get_thought(uuid="730c1a8e-b09f-4889-bbe9-4867d0ee7f1a")
+```
+
+#### Message Tools (3)
+
+**4. add_message** - Ajouter un message à une conversation
+```
+add_message(
+    content="Explain transformers in AI",
+    role="user",  # user, assistant, system
+    conversation_id="chat_2025_01_08",
+    order_index=0
+)
+```
+
+**5. get_messages** - Récupérer tous les messages d'une conversation
+```
+get_messages(
+    conversation_id="chat_2025_01_08",
+    limit=50
+)
+```
+
+**6. search_messages** - Recherche sémantique dans les messages
+```
+search_messages(
+    query="transformers AI",
+    limit=10,
+    conversation_id_filter="chat_2025_01_08"  # optionnel
+)
+```
+
+#### Conversation Tools (3)
+
+**7. get_conversation** - Récupérer une conversation par ID
+```
+get_conversation(conversation_id="ikario_derniere_pensee")
+```
+
+**8. search_conversations** - Recherche sémantique dans les conversations
+```
+search_conversations(
+    query="philosophical discussion",
+    limit=10,
+    category_filter="philosophy"  # optionnel
+)
+```
+
+**9. list_conversations** - Lister toutes les conversations
+```
+list_conversations(
+    limit=20,
+    category_filter="testing"  # optionnel
+)
+```
+
+**Tests** : Tous les outils Memory ont été testés avec succès (voir `test_memory_mcp_tools.py`)
+
+**Documentation complète** : Voir `memory/README_MCP_TOOLS.md` pour l'architecture détaillée, les schémas de données et les exemples d'utilisation.
+
+Pour plus de détails sur les outils Library RAG, voir la documentation complète dans `.claude/CLAUDE.md`.
 
 ---
 

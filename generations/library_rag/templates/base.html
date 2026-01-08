@@ -718,6 +718,15 @@
                 <span class="icon">📚</span>
                 <span>Documents</span>
             </a>
+            <div style="margin: 1rem 0; border-top: 1px solid rgba(255,255,255,0.1);"></div>
+            <a href="/memories" class="{{ 'active' if request.endpoint == 'memories' else '' }}">
+                <span class="icon">🧠</span>
+                <span>Memory (Ikario)</span>
+            </a>
+            <a href="/conversations" class="{{ 'active' if request.endpoint == 'conversations' else '' }}">
+                <span class="icon">💭</span>
+                <span>Conversations</span>
+            </a>
         </div>
     </nav>
 
@@ -736,6 +745,7 @@
                 <a href="/chat" class="{{ 'active' if request.endpoint == 'chat' else '' }}">Conversation</a>
                 <a href="/upload" class="{{ 'active' if request.endpoint == 'upload' else '' }}">Parser PDF</a>
                 <a href="/documents" class="{{ 'active' if request.endpoint == 'documents' else '' }}">Documents</a>
+                <a href="/memories" class="{{ 'active' if request.endpoint == 'memories' else '' }}">Memory</a>
             </nav>
         </div>
     </header>

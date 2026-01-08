@@ -2,12 +2,18 @@
 generations/*
 !generations/library_rag/
 
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 # Log files
 logs/
+*.log
 
 .env
 venv
-__pycache__
 
 # Node modules (if any)
 node_modules/
@@ -19,3 +25,6 @@ restoration_log.txt
 restoration_remaining_log.txt
 summary_generation_progress.json
 nul
+
+# Archives (migration scripts moved here)
+archive/

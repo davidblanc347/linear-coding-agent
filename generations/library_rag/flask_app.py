@@ -89,7 +89,22 @@ from utils.types import (
     SSEEvent,
 )
 
+# GPU Embedder for manual vectorization (Phase 5: Backend Integration)
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from memory.core import get_embedder
+
 app = Flask(__name__)
+
+# Initialize GPU embedder singleton
+_embedder = None
+
+def get_gpu_embedder():
+    """Get or create GPU embedder singleton."""
+    global _embedder
+    if _embedder is None:
+        _embedder = get_embedder()
+    return _embedder
 
 # Configuration Flask
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
@@ -152,26 +167,25 @@ def get_collection_stats() -> Optional[CollectionStats]:
             stats: CollectionStats = {}
 
             # Chunk stats (renamed from Passage)
-            passages = client.collections.get("Chunk")
+            passages = client.collections.get("Chunk_v2")
             passage_count = passages.aggregate.over_all(total_count=True)
             stats["passages"] = passage_count.total_count or 0
 
-            # Get unique authors and works (from nested objects)
-            all_passages = passages.query.fetch_objects(limit=1000)
+            # Get unique authors and works (from direct properties in v2)
+            all_passages = passages.query.fetch_objects(limit=10000)
             authors: set[str] = set()
             works: set[str] = set()
             languages: set[str] = set()
 
             for obj in all_passages.objects:
-                # Work is now a nested object with {title, author}
-                work_obj = obj.properties.get("work")
-                if work_obj and isinstance(work_obj, dict):
-                    if work_obj.get("author"):
-                        authors.add(str(work_obj["author"]))
-                    if work_obj.get("title"):
-                        works.add(str(work_obj["title"]))
-                if obj.properties.get("language"):
-                    languages.add(str(obj.properties["language"]))
+                props = obj.properties
+                # In v2: workAuthor and workTitle are direct properties
+                if props.get("workAuthor"):
+                    authors.add(str(props["workAuthor"]))
+                if props.get("workTitle"):
+                    works.add(str(props["workTitle"]))
+                if props.get("language"):
+                    languages.add(str(props["language"]))
 
             stats["authors"] = len(authors)
             stats["works"] = len(works)
@@ -208,13 +222,13 @@ def get_all_passages(
             if client is None:
                 return []
 
-            chunks = client.collections.get("Chunk")
+            chunks = client.collections.get("Chunk_v2")
 
             result = chunks.query.fetch_objects(
                 limit=limit,
                 offset=offset,
                 return_properties=[
-                    "text", "sectionPath", "sectionLevel", "chapterTitle",
+                    "text", "sectionPath", "chapterTitle",
                     "canonicalReference", "unitType", "keywords", "orderIndex", "language"
                 ],
             )
@@ -253,7 +267,7 @@ def simple_search(
             if client is None:
                 return []
 
-            chunks = client.collections.get("Chunk")
+            chunks = client.collections.get("Chunk_v2")
 
             # Build filters using top-level properties (workAuthor, workTitle)
             filters: Optional[Any] = None
@@ -263,13 +277,17 @@ def simple_search(
                 work_filter_obj = wvq.Filter.by_property("workTitle").equal(work_filter)
                 filters = filters & work_filter_obj if filters else work_filter_obj
 
-            result = chunks.query.near_text(
-                query=query,
+            # Generate query vector with GPU embedder (Phase 5: manual vectorization)
+            embedder = get_gpu_embedder()
+            query_vector = embedder.embed_single(query)
+
+            result = chunks.query.near_vector(
+                near_vector=query_vector.tolist(),
                 limit=limit,
                 filters=filters,
                 return_metadata=wvq.MetadataQuery(distance=True),
                 return_properties=[
-                    "text", "sectionPath", "sectionLevel", "chapterTitle",
+                    "text", "sectionPath", "chapterTitle",
                     "canonicalReference", "unitType", "keywords", "orderIndex", "language"
                 ],
             )
@@ -333,10 +351,14 @@ def hierarchical_search(
             # STAGE 1: Search Summary collection for relevant sections
             # ═══════════════════════════════════════════════════════════════
 
-            summary_collection = client.collections.get("Summary")
+            summary_collection = client.collections.get("Summary_v2")
 
-            summaries_result = summary_collection.query.near_text(
-                query=query,
+            # Generate query vector with GPU embedder (Phase 5: manual vectorization)
+            embedder = get_gpu_embedder()
+            query_vector = embedder.embed_single(query)
+
+            summaries_result = summary_collection.query.near_vector(
+                near_vector=query_vector.tolist(),
                 limit=sections_limit,
                 return_metadata=wvq.MetadataQuery(distance=True),
                 # Note: Don't specify return_properties - let Weaviate return all properties
@@ -358,63 +380,62 @@ def hierarchical_search(
             for summary_obj in summaries_result.objects:
                 props = summary_obj.properties
 
-                # Try to get document.sourceId if available (nested object might still be returned)
-                doc_obj = props.get("document")
-                source_id = ""
-                if doc_obj and isinstance(doc_obj, dict):
-                    source_id = doc_obj.get("sourceId", "")
+                # In v2: Summary has workTitle property, need to get sourceId from Work
+                work_title = props.get("workTitle", "")
 
+                # We'll get sourceId later by matching workTitle with Work.sourceId
+                # For now, use workTitle as identifier
                 sections_data.append({
                     "section_path": props.get("sectionPath", ""),
                     "title": props.get("title", ""),
                     "summary_text": props.get("text", ""),
                     "level": props.get("level", 1),
                     "concepts": props.get("concepts", []),
-                    "document_source_id": source_id,
-                    "summary_uuid": str(summary_obj.uuid),  # Keep UUID for later retrieval if needed
+                    "document_source_id": "",  # Will be populated during filtering
+                    "work_title": work_title,  # Add workTitle for filtering
+                    "summary_uuid": str(summary_obj.uuid),
                     "similarity": round((1 - summary_obj.metadata.distance) * 100, 1) if summary_obj.metadata and summary_obj.metadata.distance else 0,
                 })
 
-            # Post-filter sections by author/work (Summary doesn't have work nested object)
+            # Post-filter sections by author/work (Summary_v2 has workTitle property)
             if author_filter or work_filter:
                 print(f"[HIERARCHICAL] Post-filtering {len(sections_data)} sections by work='{work_filter}'")
-                doc_collection = client.collections.get("Document")
-                filtered_sections = []
 
+                # Build Work title -> author map for filtering
+                work_collection = client.collections.get("Work")
+                work_map = {}
+                for work in work_collection.iterator(include_vector=False):
+                    props = work.properties
+                    title = props.get("title")
+                    if title:
+                        work_map[title] = {
+                            "author": props.get("author", "Unknown"),
+                            "sourceId": props.get("sourceId", "")
+                        }
+
+                filtered_sections = []
                 for section in sections_data:
-                    source_id = section["document_source_id"]
-                    if not source_id:
-                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' SKIPPED (no sourceId)")
+                    work_title = section.get("work_title", "")
+
+                    if not work_title or work_title not in work_map:
+                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' SKIPPED (no work mapping)")
                         continue
 
-                    # Query Document to get work metadata
-                    # Note: 'work' is a nested object, so we don't specify it in return_properties
-                    # Weaviate should return it automatically
-                    doc_result = doc_collection.query.fetch_objects(
-                        filters=wvq.Filter.by_property("sourceId").equal(source_id),
-                        limit=1,
-                    )
+                    work_author = work_map[work_title]["author"]
+                    section["document_source_id"] = work_map[work_title]["sourceId"]  # Populate sourceId
 
-                    if doc_result.objects:
-                        doc_work = doc_result.objects[0].properties.get("work", {})
-                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' doc_work type={type(doc_work)}, value={doc_work}")
-                        if isinstance(doc_work, dict):
-                            work_title = doc_work.get("title", "N/A")
-                            work_author = doc_work.get("author", "N/A")
-                            # Check filters
-                            if author_filter and work_author != author_filter:
-                                print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' FILTERED (author '{work_author}' != '{author_filter}')")
-                                continue
-                            if work_filter and work_title != work_filter:
-                                print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' FILTERED (work '{work_title}' != '{work_filter}')")
-                                continue
+                    print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' work={work_title}, author={work_author}")
 
-                            print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' KEPT (work='{work_title}')")
-                            filtered_sections.append(section)
-                        else:
-                            print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' SKIPPED (doc_work not a dict)")
-                    else:
-                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' SKIPPED (no doc found for sourceId='{source_id}')")
+                    # Check filters
+                    if author_filter and work_author != author_filter:
+                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' FILTERED (author '{work_author}' != '{author_filter}')")
+                        continue
+                    if work_filter and work_title != work_filter:
+                        print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' FILTERED (work '{work_title}' != '{work_filter}')")
+                        continue
+
+                    print(f"[HIERARCHICAL] Section '{section['section_path'][:40]}...' KEPT (work='{work_title}')")
+                    filtered_sections.append(section)
 
                 sections_data = filtered_sections
                 print(f"[HIERARCHICAL] After filtering: {len(sections_data)} sections remaining")
@@ -438,7 +459,7 @@ def hierarchical_search(
             # For each section, search chunks using the section's summary text
             # This groups chunks under their relevant sections
 
-            chunk_collection = client.collections.get("Chunk")
+            chunk_collection = client.collections.get("Chunk_v2")
 
             # Build base filters (author/work only)
             base_filters: Optional[Any] = None
@@ -464,8 +485,11 @@ def hierarchical_search(
                 if base_filters:
                     section_filters = base_filters & section_filters
 
-                chunks_result = chunk_collection.query.near_text(
-                    query=section_query,
+                # Generate query vector with GPU embedder (Phase 5: manual vectorization)
+                section_query_vector = embedder.embed_single(section_query)
+
+                chunks_result = chunk_collection.query.near_vector(
+                    near_vector=section_query_vector.tolist(),
                     limit=chunks_per_section,
                     filters=section_filters,
                     return_metadata=wvq.MetadataQuery(distance=True),
@@ -600,14 +624,28 @@ def summary_only_search(
             if client is None:
                 return []
 
-            summaries = client.collections.get("Summary")
+            summaries = client.collections.get("Summary_v2")
 
-            # Note: Cannot filter by nested document properties directly in Weaviate v4
-            # Must fetch all and filter in Python if author/work filters are present
+            # Build Work map for metadata lookup (Summary_v2 has workTitle, not document)
+            work_collection = client.collections.get("Work")
+            work_map = {}
+            for work in work_collection.iterator(include_vector=False):
+                work_props = work.properties
+                title = work_props.get("title")
+                if title:
+                    work_map[title] = {
+                        "author": work_props.get("author", "Unknown"),
+                        "year": work_props.get("year", 0),
+                        "sourceId": work_props.get("sourceId", ""),
+                    }
+
+            # Generate query vector with GPU embedder (Phase 5: manual vectorization)
+            embedder = get_gpu_embedder()
+            query_vector = embedder.embed_single(query)
 
             # Semantic search
-            results = summaries.query.near_text(
-                query=query,
+            results = summaries.query.near_vector(
+                near_vector=query_vector.tolist(),
                 limit=limit * 3 if (author_filter or work_filter) else limit,  # Fetch more if filtering
                 return_metadata=wvq.MetadataQuery(distance=True)
             )
@@ -618,24 +656,34 @@ def summary_only_search(
                 props = obj.properties
                 similarity = 1 - obj.metadata.distance
 
-                # Apply filters (Python-side since nested properties)
-                if author_filter and props["document"].get("author", "") != author_filter:
+                # Get work metadata from workTitle
+                work_title = props.get("workTitle", "")
+                if not work_title or work_title not in work_map:
                     continue
-                if work_filter and props["document"].get("title", "") != work_filter:
+
+                work_info = work_map[work_title]
+                work_author = work_info["author"]
+                work_year = work_info["year"]
+                source_id = work_info["sourceId"]
+
+                # Apply filters
+                if author_filter and work_author != author_filter:
+                    continue
+                if work_filter and work_title != work_filter:
                     continue
 
                 # Determine document icon and name
-                doc_id = props["document"]["sourceId"].lower()
-                if "tiercelin" in doc_id:
+                doc_id_lower = source_id.lower()
+                if "tiercelin" in doc_id_lower:
                     doc_icon = "🟡"
                     doc_name = "Tiercelin"
-                elif "platon" in doc_id or "menon" in doc_id:
+                elif "platon" in doc_id_lower or "menon" in doc_id_lower:
                     doc_icon = "🟢"
                     doc_name = "Platon"
-                elif "haugeland" in doc_id:
+                elif "haugeland" in doc_id_lower:
                     doc_icon = "🟣"
                     doc_name = "Haugeland"
-                elif "logique" in doc_id:
+                elif "logique" in doc_id_lower:
                     doc_icon = "🔵"
                     doc_name = "Logique"
                 else:
@@ -647,19 +695,19 @@ def summary_only_search(
                     "uuid": str(obj.uuid),
                     "similarity": round(similarity * 100, 1),  # Convert to percentage
                     "text": props.get("text", ""),
-                    "title": props["title"],
+                    "title": props.get("title", ""),
                     "concepts": props.get("concepts", []),
                     "doc_icon": doc_icon,
                     "doc_name": doc_name,
-                    "author": props["document"].get("author", ""),
-                    "year": props["document"].get("year", 0),
+                    "author": work_author,
+                    "year": work_year,
                     "chunks_count": props.get("chunksCount", 0),
                     "section_path": props.get("sectionPath", ""),
                     "sectionPath": props.get("sectionPath", ""),  # Alias for template compatibility
                     # Add work info for template compatibility
                     "work": {
-                        "title": props["document"].get("title", ""),
-                        "author": props["document"].get("author", ""),
+                        "title": work_title,
+                        "author": work_author,
                     },
                 }
 
@@ -969,7 +1017,7 @@ def rag_search(
                 print("[RAG Search] Weaviate client unavailable")
                 return []
 
-            chunks = client.collections.get("Chunk")
+            chunks = client.collections.get("Chunk_v2")
 
             # Build work filter if selected_works is provided
             work_filter: Optional[Any] = None
@@ -978,9 +1026,13 @@ def rag_search(
                 work_filter = wvq.Filter.by_property("workTitle").contains_any(selected_works)
                 print(f"[RAG Search] Applying work filter: {selected_works}")
 
+            # Generate query vector with GPU embedder (Phase 5: manual vectorization)
+            embedder = get_gpu_embedder()
+            query_vector = embedder.embed_single(query)
+
             # Query with properties needed for RAG context
-            result = chunks.query.near_text(
-                query=query,
+            result = chunks.query.near_vector(
+                near_vector=query_vector.tolist(),
                 limit=limit,
                 filters=work_filter,
                 return_metadata=wvq.MetadataQuery(distance=True),
@@ -1444,33 +1496,30 @@ def api_get_works() -> Union[Response, tuple[Response, int]]:
                     "message": "Cannot connect to Weaviate database"
                 }), 500
 
-            # Query Chunk collection to get all unique works with counts
-            chunks = client.collections.get("Chunk")
+            # Query Chunk_v2 collection to get all unique works with counts
+            chunks = client.collections.get("Chunk_v2")
 
             # Fetch all chunks to aggregate by work
-            # Using a larger limit to get all documents
-            # Note: Don't use return_properties with nested objects (causes gRPC error)
-            # Fetch all objects without specifying properties
+            # In v2: work is NOT a nested object, use workTitle and workAuthor properties
             all_chunks = chunks.query.fetch_objects(limit=10000)
 
             # Aggregate chunks by work (title + author)
             works_count: Dict[str, Dict[str, Any]] = {}
 
             for obj in all_chunks.objects:
-                work_obj = obj.properties.get("work")
-                if work_obj and isinstance(work_obj, dict):
-                    title = work_obj.get("title", "")
-                    author = work_obj.get("author", "")
+                props = obj.properties
+                title = props.get("workTitle", "")
+                author = props.get("workAuthor", "")
 
-                    if title:  # Only count if title exists
-                        # Use title as key (assumes unique titles)
-                        if title not in works_count:
-                            works_count[title] = {
-                                "title": title,
-                                "author": author or "Unknown",
-                                "chunks_count": 0
-                            }
-                        works_count[title]["chunks_count"] += 1
+                if title:  # Only count if title exists
+                    # Use title as key (assumes unique titles)
+                    if title not in works_count:
+                        works_count[title] = {
+                            "title": title,
+                            "author": author or "Unknown",
+                            "chunks_count": 0
+                        }
+                    works_count[title]["chunks_count"] += 1
 
             # Convert to list and sort by author, then title
             works_list = list(works_count.values())
@@ -3082,45 +3131,60 @@ def documents() -> str:
 
     with get_weaviate_client() as client:
         if client is not None:
-            # Get chunk counts and authors
-            chunk_collection = client.collections.get("Chunk")
+            from typing import cast
 
-            for obj in chunk_collection.iterator(include_vector=False):
-                props = obj.properties
-                from typing import cast
-                doc_obj = cast(Dict[str, Any], props.get("document", {}))
-                work_obj = cast(Dict[str, Any], props.get("work", {}))
-
-                if doc_obj:
-                    source_id = doc_obj.get("sourceId", "")
-                    if source_id:
-                        if source_id not in documents_from_weaviate:
-                            documents_from_weaviate[source_id] = {
-                                "source_id": source_id,
-                                "title": work_obj.get("title") if work_obj else "Unknown",
-                                "author": work_obj.get("author") if work_obj else "Unknown",
-                                "chunks_count": 0,
-                                "summaries_count": 0,
-                                "authors": set(),
-                            }
-                        documents_from_weaviate[source_id]["chunks_count"] += 1
-
-                        # Track unique authors
-                        author = work_obj.get("author") if work_obj else None
-                        if author:
-                            documents_from_weaviate[source_id]["authors"].add(author)
-
-            # Get summary counts
+            # Get all Works (now with sourceId added in Phase 1 of migration)
             try:
-                summary_collection = client.collections.get("Summary")
-                for obj in summary_collection.iterator(include_vector=False):
-                    props = obj.properties
-                    doc_obj = cast(Dict[str, Any], props.get("document", {}))
+                work_collection = client.collections.get("Work")
+                chunk_collection = client.collections.get("Chunk_v2")
 
-                    if doc_obj:
-                        source_id = doc_obj.get("sourceId", "")
-                        if source_id and source_id in documents_from_weaviate:
-                            documents_from_weaviate[source_id]["summaries_count"] += 1
+                # Build documents from Work collection
+                for work in work_collection.iterator(include_vector=False):
+                    props = work.properties
+                    source_id = props.get("sourceId")
+
+                    # Skip Works without sourceId (not documents)
+                    if not source_id:
+                        continue
+
+                    documents_from_weaviate[source_id] = {
+                        "source_id": source_id,
+                        "title": props.get("title", "Unknown"),
+                        "author": props.get("author", "Unknown"),
+                        "pages": props.get("pages", 0),
+                        "edition": props.get("edition", ""),
+                        "chunks_count": 0,
+                        "summaries_count": 0,
+                        "authors": set(),
+                    }
+
+                    # Add author to set
+                    if props.get("author") and props.get("author") != "Unknown":
+                        documents_from_weaviate[source_id]["authors"].add(props.get("author"))
+
+                # Count chunks per document (via workTitle)
+                for chunk in chunk_collection.iterator(include_vector=False):
+                    work_title = chunk.properties.get("workTitle")
+
+                    # Find corresponding sourceId
+                    for source_id, doc_data in documents_from_weaviate.items():
+                        if doc_data["title"] == work_title:
+                            doc_data["chunks_count"] += 1
+                            break
+            except Exception as e:
+                print(f"Warning: Could not load Work collection: {e}")
+
+            # Count summaries (if collection exists)
+            try:
+                summary_collection = client.collections.get("Summary_v2")
+                for summary in summary_collection.iterator(include_vector=False):
+                    work_title = summary.properties.get("workTitle")
+
+                    # Find corresponding sourceId
+                    for source_id, doc_data in documents_from_weaviate.items():
+                        if doc_data["title"] == work_title:
+                            doc_data["summaries_count"] += 1
+                            break
             except Exception:
                 # Summary collection may not exist
                 pass
@@ -3157,15 +3221,193 @@ def documents() -> str:
             "has_images": images_dir.exists() and any(images_dir.iterdir()) if images_dir.exists() else False,
             "image_count": len(list(images_dir.glob("*.png"))) if images_dir.exists() else 0,
             "metadata": metadata,
+            "pages": weaviate_data.get("pages", pages),  # FROM WEAVIATE, fallback to file
             "summaries_count": weaviate_data["summaries_count"],  # FROM WEAVIATE
             "authors_count": len(weaviate_data["authors"]),  # FROM WEAVIATE
             "chunks_count": weaviate_data["chunks_count"],  # FROM WEAVIATE
             "title": weaviate_data["title"],  # FROM WEAVIATE
             "author": weaviate_data["author"],  # FROM WEAVIATE
+            "edition": weaviate_data.get("edition", ""),  # FROM WEAVIATE
             "toc": toc,
         })
 
     return render_template("documents.html", documents=documents_list)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Memory Routes (Phase 5: Backend Integration)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run_async(coro):
+    """Run async coroutine in sync Flask context."""
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+@app.route("/memories")
+def memories() -> str:
+    """Render the Memory search page (Thoughts + Messages)."""
+    # Get memory statistics
+    with get_weaviate_client() as client:
+        if client is None:
+            flash("Cannot connect to Weaviate database", "error")
+            stats = {"thoughts": 0, "messages": 0, "conversations": 0}
+        else:
+            try:
+                thoughts = client.collections.get("Thought")
+                messages = client.collections.get("Message")
+                conversations = client.collections.get("Conversation")
+
+                thoughts_count = thoughts.aggregate.over_all(total_count=True).total_count
+                messages_count = messages.aggregate.over_all(total_count=True).total_count
+                conversations_count = conversations.aggregate.over_all(total_count=True).total_count
+
+                stats = {
+                    "thoughts": thoughts_count or 0,
+                    "messages": messages_count or 0,
+                    "conversations": conversations_count or 0,
+                }
+            except Exception as e:
+                print(f"Error fetching memory stats: {e}")
+                stats = {"thoughts": 0, "messages": 0, "conversations": 0}
+
+    return render_template("memories.html", stats=stats)
+
+
+@app.route("/api/memories/search-thoughts", methods=["POST"])
+def api_search_thoughts():
+    """API endpoint for thought semantic search."""
+    try:
+        # Import Memory MCP tools locally
+        from memory.mcp import SearchThoughtsInput, search_thoughts_handler
+
+        data = request.json
+        query = data.get("query", "")
+        limit = data.get("limit", 10)
+        thought_type_filter = data.get("thought_type_filter")
+
+        input_data = SearchThoughtsInput(
+            query=query,
+            limit=limit,
+            thought_type_filter=thought_type_filter
+        )
+
+        result = run_async(search_thoughts_handler(input_data))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/memories/search-messages", methods=["POST"])
+def api_search_messages():
+    """API endpoint for message semantic search."""
+    try:
+        from memory.mcp import SearchMessagesInput, search_messages_handler
+
+        data = request.json
+        query = data.get("query", "")
+        limit = data.get("limit", 10)
+        conversation_id_filter = data.get("conversation_id_filter")
+
+        input_data = SearchMessagesInput(
+            query=query,
+            limit=limit,
+            conversation_id_filter=conversation_id_filter
+        )
+
+        result = run_async(search_messages_handler(input_data))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/conversations")
+def conversations() -> str:
+    """Render the Conversations page."""
+    try:
+        from memory.mcp import ListConversationsInput, list_conversations_handler
+
+        limit = request.args.get("limit", 20, type=int)
+        category_filter = request.args.get("category")
+
+        input_data = ListConversationsInput(
+            limit=limit,
+            category_filter=category_filter
+        )
+
+        result = run_async(list_conversations_handler(input_data))
+
+        if result.get("success"):
+            conversations_list = result.get("conversations", [])
+        else:
+            flash(f"Error loading conversations: {result.get('error')}", "error")
+            conversations_list = []
+
+        return render_template("conversations.html", conversations=conversations_list)
+    except Exception as e:
+        flash(f"Error loading conversations: {str(e)}", "error")
+        return render_template("conversations.html", conversations=[])
+
+
+@app.route("/conversation/<conversation_id>")
+def conversation_view(conversation_id: str) -> str:
+    """View a specific conversation with all its messages."""
+    try:
+        from memory.mcp import (
+            GetConversationInput, get_conversation_handler,
+            GetMessagesInput, get_messages_handler
+        )
+
+        # Get conversation metadata
+        conv_input = GetConversationInput(conversation_id=conversation_id)
+        conversation = run_async(get_conversation_handler(conv_input))
+
+        if not conversation.get("success"):
+            flash(f"Conversation not found: {conversation.get('error')}", "error")
+            return redirect(url_for("conversations"))
+
+        # Get all messages
+        msg_input = GetMessagesInput(conversation_id=conversation_id, limit=500)
+        messages_result = run_async(get_messages_handler(msg_input))
+
+        messages = messages_result.get("messages", []) if messages_result.get("success") else []
+
+        return render_template(
+            "conversation_view.html",
+            conversation=conversation,
+            messages=messages
+        )
+    except Exception as e:
+        flash(f"Error loading conversation: {str(e)}", "error")
+        return redirect(url_for("conversations"))
+
+
+@app.route("/api/conversations/search", methods=["POST"])
+def api_search_conversations():
+    """API endpoint for conversation semantic search."""
+    try:
+        from memory.mcp import SearchConversationsInput, search_conversations_handler
+
+        data = request.json
+        query = data.get("query", "")
+        limit = data.get("limit", 10)
+        category_filter = data.get("category_filter")
+
+        input_data = SearchConversationsInput(
+            query=query,
+            limit=limit,
+            category_filter=category_filter
+        )
+
+        result = run_async(search_conversations_handler(input_data))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
