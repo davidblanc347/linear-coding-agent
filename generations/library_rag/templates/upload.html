@@ -17,7 +17,7 @@
         <form method="post" enctype="multipart/form-data">
             <!-- Sélection du fichier -->
             <div class="form-group">
-                <label class="form-label" for="file">📎 Sélectionnez votre fichier</label>
+                <label class="form-label" for="file">📎 Sélectionnez votre fichier (ou plusieurs)</label>
                 <input
                     type="file"
                     name="file"
@@ -25,9 +25,13 @@
                     class="form-control"
                     accept=".pdf,.docx,.md"
                     required
+                    multiple
                     onchange="updateOptionsForFileType()"
                 >
-                <div class="caption mt-1">Formats acceptés : PDF (.pdf), Word (.docx) ou Markdown (.md) • Max 50 MB</div>
+                <div class="caption mt-1">
+                    Formats acceptés : PDF (.pdf), Word (.docx) ou Markdown (.md) • Max 50 MB par fichier<br>
+                    <span id="file-count-info" style="font-weight: 600; color: #2196F3;"></span>
+                </div>
             </div>
 
             <!-- Configuration recommandée (par défaut) -->
@@ -217,6 +221,18 @@ function updateModelOptions() {
 
 function updateOptionsForFileType() {
     const fileInput = document.getElementById('file');
+    const fileCountInfo = document.getElementById('file-count-info');
+    const fileCount = fileInput.files.length;
+
+    // Update file count display
+    if (fileCount === 0) {
+        fileCountInfo.textContent = '';
+    } else if (fileCount === 1) {
+        fileCountInfo.textContent = '';
+    } else {
+        fileCountInfo.textContent = `📦 ${fileCount} fichiers sélectionnés (traitement séquentiel : un fichier après l'autre)`;
+    }
+
     const fileName = fileInput.files[0]?.name || '';
     const isWord = fileName.toLowerCase().endsWith('.docx');
     const isPDF = fileName.toLowerCase().endsWith('.pdf');
@@ -238,7 +254,7 @@ function updateOptionsForFileType() {
     wordPipelineInfo.style.display = 'none';
     markdownPipelineInfo.style.display = 'none';
 
-    // Afficher selon le type
+    // Afficher selon le type (basé sur le premier fichier)
     if (isWord) {
         wordInfo.style.display = 'block';
         wordPipelineInfo.style.display = 'block';

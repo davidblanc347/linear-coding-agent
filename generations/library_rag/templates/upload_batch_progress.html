@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}Traitement Batch en cours{% endblock %}
+
+{% block content %}
+<section class="section">
+    <h1>📦 Traitement de {{ total_files }} document(s)</h1>
+    <p class="lead">Suivi en temps réel du traitement séquentiel</p>
+
+    <!-- Progression globale -->
+    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-bottom: 2rem;">
+        <h3 style="margin-bottom: 1rem; color: white;">📊 Progression Globale</h3>
+        <div style="display: flex; gap: 2rem; align-items: center; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+                <div style="font-size: 2.5rem; font-weight: bold;" id="batch-completed-count">0</div>
+                <div style="opacity: 0.9;">Fichiers complétés</div>
+            </div>
+            <div style="flex: 1; min-width: 200px;">
+                <div style="font-size: 2.5rem; font-weight: bold;" id="batch-failed-count">0</div>
+                <div style="opacity: 0.9;">Fichiers en erreur</div>
+            </div>
+            <div style="flex: 2; min-width: 300px;">
+                <div style="background: rgba(255,255,255,0.2); border-radius: 10px; height: 30px; overflow: hidden; position: relative;">
+                    <div
+                        id="batch-progress-bar"
+                        style="background: linear-gradient(90deg, #4caf50, #8bc34a); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.9rem;"
+                    >
+                        <span id="batch-progress-text">0%</span>
+                    </div>
+                </div>
+                <div style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;" id="batch-status-text">
+                    Initialisation...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tableau des fichiers -->
+    <div class="card">
+        <h3>📄 Détails par fichier</h3>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                <thead>
+                    <tr style="background: #f5f5f5; border-bottom: 2px solid #ddd;">
+                        <th style="padding: 0.75rem; text-align: left; font-weight: 600;">#</th>
+                        <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Fichier</th>
+                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Statut</th>
+                        <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Étape actuelle</th>
+                        <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Progression</th>
+                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                    <tr data-file-index="{{ loop.index0 }}" style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 0.75rem; color: #666;">{{ loop.index }}</td>
+                        <td style="padding: 0.75rem; font-family: monospace; font-size: 0.9rem;">
+                            {{ file.filename }}
+                        </td>
+                        <td style="padding: 0.75rem; text-align: center;">
+                            <span class="badge badge-status" id="status-{{ loop.index0 }}"
+                                  style="padding: 0.4rem 0.8rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">
+                                En attente
+                            </span>
+                        </td>
+                        <td style="padding: 0.75rem;">
+                            <span id="step-{{ loop.index0 }}" style="color: #666; font-size: 0.9rem;">—</span>
+                        </td>
+                        <td style="padding: 0.75rem;">
+                            <div style="background: #f0f0f0; border-radius: 10px; height: 20px; overflow: hidden; position: relative;">
+                                <div
+                                    id="progress-{{ loop.index0 }}"
+                                    style="background: linear-gradient(90deg, #2196F3, #21cbf3); height: 100%; width: 0%; transition: width 0.3s ease;"
+                                ></div>
+                            </div>
+                        </td>
+                        <td style="padding: 0.75rem; text-align: center;">
+                            <span id="actions-{{ loop.index0 }}" style="font-size: 0.85rem; color: #999;">—</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Bouton de résultats (caché initialement) -->
+    <div id="results-button-container" style="display: none; text-align: center; margin-top: 2rem;">
+        <a href="/upload/batch/result/{{ batch_id }}" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 2rem;">
+            ✅ Voir les résultats du batch
+        </a>
+    </div>
+</section>
+
+<style>
+.badge-status {
+    display: inline-block;
+    white-space: nowrap;
+}
+.badge-pending {
+    background: #e0e0e0;
+    color: #666;
+}
+.badge-processing {
+    background: #2196F3;
+    color: white;
+}
+.badge-complete {
+    background: #4caf50;
+    color: white;
+}
+.badge-error {
+    background: #f44336;
+    color: white;
+}
+</style>
+
+<script>
+const batchId = "{{ batch_id }}";
+const totalFiles = {{ total_files }};
+const eventSources = {}; // Store EventSource objects by file index
+
+// Poll batch status every 2 seconds
+const pollInterval = setInterval(pollBatchStatus, 2000);
+
+// Initial poll
+pollBatchStatus();
+
+function pollBatchStatus() {
+    fetch(`/upload/batch/status/${batchId}`)
+        .then(response => response.json())
+        .then(data => {
+            // Update global progress
+            const completed = data.completed_files;
+            const failed = data.failed_files;
+            const total = data.total_files;
+            const progress = Math.round((completed + failed) / total * 100);
+
+            document.getElementById('batch-completed-count').textContent = completed;
+            document.getElementById('batch-failed-count').textContent = failed;
+            document.getElementById('batch-progress-bar').style.width = progress + '%';
+            document.getElementById('batch-progress-text').textContent = progress + '%';
+
+            // Update status text
+            if (data.status === 'complete') {
+                document.getElementById('batch-status-text').textContent =
+                    '✅ Traitement terminé !';
+                document.getElementById('results-button-container').style.display = 'block';
+                clearInterval(pollInterval); // Stop polling
+            } else if (data.status === 'partial') {
+                document.getElementById('batch-status-text').textContent =
+                    '⚠️ Traitement partiel (certains fichiers en erreur)';
+                document.getElementById('results-button-container').style.display = 'block';
+                clearInterval(pollInterval);
+            } else if (data.status === 'error') {
+                document.getElementById('batch-status-text').textContent =
+                    '❌ Tous les fichiers ont échoué';
+                document.getElementById('results-button-container').style.display = 'block';
+                clearInterval(pollInterval);
+            } else {
+                const currentFile = data.files.findIndex(f => f.status === 'processing');
+                if (currentFile >= 0) {
+                    document.getElementById('batch-status-text').textContent =
+                        `🔄 Traitement du fichier ${currentFile + 1}/${total}...`;
+                } else {
+                    document.getElementById('batch-status-text').textContent =
+                        '🔄 Traitement en cours...';
+                }
+            }
+
+            // Update individual file rows
+            data.files.forEach((file, index) => {
+                updateFileRow(index, file);
+
+                // Open SSE connection if job_id is assigned and not already connected
+                if (file.job_id && !eventSources[index]) {
+                    connectSSE(index, file.job_id);
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Erreur polling batch status:', error);
+        });
+}
+
+function updateFileRow(fileIndex, fileData) {
+    const statusBadge = document.getElementById(`status-${fileIndex}`);
+    const stepSpan = document.getElementById(`step-${fileIndex}`);
+    const progressBar = document.getElementById(`progress-${fileIndex}`);
+    const actionsSpan = document.getElementById(`actions-${fileIndex}`);
+
+    // Update status badge
+    statusBadge.className = 'badge badge-status badge-' + fileData.status;
+
+    if (fileData.status === 'pending') {
+        statusBadge.textContent = '⏳ En attente';
+    } else if (fileData.status === 'processing') {
+        statusBadge.textContent = '🔄 En cours';
+    } else if (fileData.status === 'complete') {
+        statusBadge.textContent = '✅ Terminé';
+        progressBar.style.width = '100%';
+        progressBar.style.background = 'linear-gradient(90deg, #4caf50, #8bc34a)';
+        stepSpan.textContent = 'Terminé avec succès';
+        actionsSpan.innerHTML = `<a href="/documents/${fileData.job_id}/view" style="color: #2196F3;">📄 Voir</a>`;
+    } else if (fileData.status === 'error') {
+        statusBadge.textContent = '❌ Erreur';
+        progressBar.style.width = '100%';
+        progressBar.style.background = '#f44336';
+        stepSpan.textContent = fileData.error || 'Erreur inconnue';
+        stepSpan.style.color = '#f44336';
+        actionsSpan.textContent = '—';
+    }
+}
+
+function connectSSE(fileIndex, jobId) {
+    console.log(`Connecting SSE for file ${fileIndex}, job ${jobId}`);
+
+    const eventSource = new EventSource(`/upload/progress/${jobId}`);
+    eventSources[fileIndex] = eventSource;
+
+    const stepSpan = document.getElementById(`step-${fileIndex}`);
+    const progressBar = document.getElementById(`progress-${fileIndex}`);
+
+    eventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'step') {
+                // Update step text
+                let stepText = data.step || '';
+                if (data.detail) {
+                    stepText += ` - ${data.detail}`;
+                }
+                stepSpan.textContent = stepText;
+
+                // Update progress (simplified estimation)
+                const stepProgress = {
+                    'ocr': 10,
+                    'markdown': 20,
+                    'metadata': 30,
+                    'toc': 40,
+                    'classification': 50,
+                    'chunking': 60,
+                    'cleaning': 70,
+                    'validation': 80,
+                    'ingestion': 90,
+                    'complete': 100
+                };
+                const progress = stepProgress[data.step] || 50;
+                progressBar.style.width = progress + '%';
+
+            } else if (data.type === 'complete') {
+                stepSpan.textContent = 'Terminé avec succès';
+                progressBar.style.width = '100%';
+                progressBar.style.background = 'linear-gradient(90deg, #4caf50, #8bc34a)';
+                eventSource.close();
+                delete eventSources[fileIndex];
+
+            } else if (data.type === 'error') {
+                stepSpan.textContent = data.message || 'Erreur';
+                stepSpan.style.color = '#f44336';
+                progressBar.style.width = '100%';
+                progressBar.style.background = '#f44336';
+                eventSource.close();
+                delete eventSources[fileIndex];
+            }
+        } catch (error) {
+            console.error('Error parsing SSE data:', error);
+        }
+    };
+
+    eventSource.onerror = function(error) {
+        console.error(`SSE error for file ${fileIndex}:`, error);
+        eventSource.close();
+        delete eventSources[fileIndex];
+    };
+}
+
+// Close all SSE connections when leaving the page
+window.addEventListener('beforeunload', function() {
+    Object.values(eventSources).forEach(es => es.close());
+});
+</script>
+{% endblock %}

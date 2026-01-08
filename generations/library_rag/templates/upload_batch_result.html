@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Résultats Batch{% endblock %}
+
+{% block content %}
+<section class="section">
+    <h1>📊 Résumé du Traitement Batch</h1>
+    <p class="lead">Résultats finaux du traitement de {{ batch.total_files }} fichier(s)</p>
+
+    <!-- Statistiques globales -->
+    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-bottom: 2rem;">
+        <h3 style="margin-bottom: 1.5rem; color: white;">📈 Statistiques Globales</h3>
+        <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: space-around;">
+            <div style="text-align: center; min-width: 150px;">
+                <div style="font-size: 3rem; font-weight: bold;">{{ batch.total_files }}</div>
+                <div style="opacity: 0.9; margin-top: 0.5rem;">Total Fichiers</div>
+            </div>
+            <div style="text-align: center; min-width: 150px;">
+                <div style="font-size: 3rem; font-weight: bold; color: #4caf50;">{{ batch.completed_files }}</div>
+                <div style="opacity: 0.9; margin-top: 0.5rem;">✅ Réussis</div>
+            </div>
+            <div style="text-align: center; min-width: 150px;">
+                <div style="font-size: 3rem; font-weight: bold; color: #f44336;">{{ batch.failed_files }}</div>
+                <div style="opacity: 0.9; margin-top: 0.5rem;">❌ Erreurs</div>
+            </div>
+            <div style="text-align: center; min-width: 150px;">
+                <div style="font-size: 3rem; font-weight: bold;">
+                    {% set success_rate = (batch.completed_files / batch.total_files * 100) | round(1) %}
+                    {{ success_rate }}%
+                </div>
+                <div style="opacity: 0.9; margin-top: 0.5rem;">Taux de Réussite</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message de statut global -->
+    {% if batch.failed_files == 0 %}
+    <div class="alert alert-success" style="background: #e8f5e9; border-left: 4px solid #4caf50; padding: 1rem; margin-bottom: 2rem;">
+        <strong>✅ Tous les fichiers ont été traités avec succès !</strong>
+        <p style="margin-top: 0.5rem;">Vous pouvez maintenant consulter les documents via les liens ci-dessous ou dans la section "Documents".</p>
+    </div>
+    {% elif batch.completed_files == 0 %}
+    <div class="alert alert-danger" style="background: #ffebee; border-left: 4px solid #f44336; padding: 1rem; margin-bottom: 2rem;">
+        <strong>❌ Aucun fichier n'a pu être traité avec succès.</strong>
+        <p style="margin-top: 0.5rem;">Vérifiez les erreurs ci-dessous pour plus de détails.</p>
+    </div>
+    {% else %}
+    <div class="alert alert-warning" style="background: #fff3e0; border-left: 4px solid #ff9800; padding: 1rem; margin-bottom: 2rem;">
+        <strong>⚠️ Traitement partiel : {{ batch.completed_files }} réussi(s), {{ batch.failed_files }} erreur(s).</strong>
+        <p style="margin-top: 0.5rem;">Certains fichiers ont été traités avec succès, d'autres ont rencontré des erreurs.</p>
+    </div>
+    {% endif %}
+
+    <!-- Liste détaillée des fichiers -->
+    <div class="card">
+        <h3>📄 Détails par Fichier</h3>
+        <div style="margin-top: 1.5rem;">
+            {% for result in results %}
+            <div class="file-result-card"
+                 style="border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; {% if result.status == 'complete' %}border-left: 4px solid #4caf50;{% elif result.status == 'error' %}border-left: 4px solid #f44336;{% else %}border-left: 4px solid #e0e0e0;{% endif %}">
+
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+                    <!-- Nom du fichier -->
+                    <div style="flex: 1; min-width: 250px;">
+                        <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 0.5rem;">
+                            {{ loop.index }}. {{ result.filename }}
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            {% if result.status == 'complete' %}
+                            <span style="background: #4caf50; color: white; padding: 0.3rem 0.8rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">
+                                ✅ Réussi
+                            </span>
+                            {% elif result.status == 'error' %}
+                            <span style="background: #f44336; color: white; padding: 0.3rem 0.8rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">
+                                ❌ Erreur
+                            </span>
+                            {% else %}
+                            <span style="background: #e0e0e0; color: #666; padding: 0.3rem 0.8rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">
+                                ⏳ En attente
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div style="text-align: right;">
+                        {% if result.status == 'complete' and result.document_name %}
+                        <a href="/documents/{{ result.document_name }}/view"
+                           class="btn btn-primary"
+                           style="display: inline-block; padding: 0.5rem 1.5rem; text-decoration: none;">
+                            📄 Voir le document
+                        </a>
+                        {% elif result.status == 'error' %}
+                        <div style="color: #f44336; font-size: 0.9rem; max-width: 400px;">
+                            <strong>Erreur :</strong><br>
+                            {{ result.error or 'Erreur inconnue' }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Actions finales -->
+    <div style="text-align: center; margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <a href="/upload" class="btn btn-primary" style="padding: 0.75rem 2rem;">
+            📤 Nouveau Upload
+        </a>
+        <a href="/documents" class="btn" style="padding: 0.75rem 2rem;">
+            📚 Voir tous les documents
+        </a>
+        {% if batch.completed_files > 0 %}
+        <a href="/search" class="btn" style="padding: 0.75rem 2rem;">
+            🔍 Rechercher dans les documents
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Informations de traitement -->
+    <div class="card" style="margin-top: 2rem; background: #f9f9f9;">
+        <h4>ℹ️ Informations de Traitement</h4>
+        <div style="margin-top: 1rem; font-size: 0.9rem; color: #666;">
+            <p><strong>Batch ID :</strong> <code style="background: #e0e0e0; padding: 0.2rem 0.5rem; border-radius: 3px;">{{ batch_id }}</code></p>
+            <p><strong>Date de traitement :</strong> {{ batch.created_at | default(0) | int | timestamp_to_date }}</p>
+            <p><strong>Options utilisées :</strong></p>
+            <ul style="margin-left: 1.5rem;">
+                <li>Provider LLM : {{ batch.options.llm_provider }}</li>
+                <li>Modèle : {{ batch.options.llm_model }}</li>
+                <li>Skip OCR : {{ "Oui" if batch.options.skip_ocr else "Non" }}</li>
+                <li>Ingestion Weaviate : {{ "Oui" if batch.options.ingest_weaviate else "Non" }}</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<style>
+.file-result-card {
+    transition: box-shadow 0.2s ease;
+}
+.file-result-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+</style>
+
+<script>
+// Add timestamp formatting filter if not already available
+// This is a simple JavaScript fallback for the Jinja2 filter
+document.addEventListener('DOMContentLoaded', function() {
+    const timestampElements = document.querySelectorAll('[data-timestamp]');
+    timestampElements.forEach(function(el) {
+        const timestamp = parseInt(el.dataset.timestamp);
+        if (timestamp) {
+            const date = new Date(timestamp * 1000);
+            el.textContent = date.toLocaleString('fr-FR', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    });
+});
+</script>
+{% endblock %}

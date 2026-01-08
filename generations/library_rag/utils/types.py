@@ -1216,3 +1216,47 @@ class DeleteDocumentResult(TypedDict, total=False):
     deleted_sections: int
     deleted_document: bool
     error: Optional[str]
+
+
+class BatchFileInfo(TypedDict, total=False):
+    """Information about a single file in a batch upload.
+
+    Attributes:
+        filename: Original filename
+        job_id: Processing job ID (assigned when processing starts)
+        status: Current status (pending, processing, complete, error)
+        error: Error message if processing failed
+        size_bytes: File size in bytes
+    """
+
+    filename: str
+    job_id: Optional[str]
+    status: str  # Literal["pending", "processing", "complete", "error"]
+    error: Optional[str]
+    size_bytes: int
+
+
+class BatchJob(TypedDict, total=False):
+    """Batch processing job tracking multiple file uploads.
+
+    Attributes:
+        job_ids: List of individual processing job IDs
+        files: List of file information dictionaries
+        total_files: Total number of files in batch
+        completed_files: Number of files successfully processed
+        failed_files: Number of files that failed processing
+        status: Overall batch status (processing, complete, partial)
+        current_job_id: Currently processing job ID (None if between files)
+        options: Processing options applied to all files
+        created_at: Timestamp when batch was created
+    """
+
+    job_ids: List[str]
+    files: List[BatchFileInfo]
+    total_files: int
+    completed_files: int
+    failed_files: int
+    status: str  # Literal["processing", "complete", "partial"]
+    current_job_id: Optional[str]
+    options: ProcessingOptions
+    created_at: float
