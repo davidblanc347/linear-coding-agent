@@ -559,6 +559,69 @@ def get_weaviate_client() -> Generator[Optional[WeaviateClient], None, None]:
             client.close()
 
 
+def create_or_get_work(
+    client: WeaviateClient,
+    doc_name: str,
+    metadata: Dict[str, Any],
+    pages: int = 0,
+) -> Optional[str]:
+    """Create or retrieve a Work entry for a document.
+
+    Creates a Work object representing the philosophical work/document.
+    If a Work with the same sourceId already exists, returns its UUID.
+
+    Args:
+        client: Active Weaviate client connection.
+        doc_name: Unique document identifier (sourceId).
+        metadata: Extracted metadata dict with keys: title, author, year, etc.
+        pages: Number of pages in the source document.
+
+    Returns:
+        UUID string of the Work object, or None if creation failed.
+    """
+    try:
+        work_collection: Collection[Any, Any] = client.collections.get("Work")
+    except Exception as e:
+        logger.warning(f"Collection Work non trouvée: {e}")
+        return None
+
+    title = metadata.get("title") or doc_name
+    author = metadata.get("author") or "Inconnu"
+    year = metadata.get("year", 0) if metadata.get("year") else 0
+
+    try:
+        # Check if Work already exists with this sourceId
+        existing = work_collection.query.fetch_objects(
+            filters=wvq.Filter.by_property("sourceId").equal(doc_name),
+            limit=1
+        )
+
+        if existing.objects:
+            work_uuid = str(existing.objects[0].uuid)
+            logger.info(f"Work déjà existant: {title} (UUID: {work_uuid[:8]}...)")
+            return work_uuid
+
+        # Create new Work
+        work_obj: Dict[str, Any] = {
+            "title": title,
+            "author": author,
+            "year": year,
+            "language": metadata.get("language", "en"),
+            "genre": metadata.get("genre", "philosophy"),
+            "sourceId": doc_name,
+            "pages": pages,
+        }
+
+        result = work_collection.data.insert(work_obj)
+        work_uuid = str(result)
+        logger.info(f"Work créé: {title} par {author} (UUID: {work_uuid[:8]}...)")
+        return work_uuid
+
+    except Exception as e:
+        logger.warning(f"Erreur création Work: {e}")
+        return None
+
+
 def ingest_document_metadata(
     client: WeaviateClient,
     doc_name: str,
@@ -831,6 +894,11 @@ def ingest_document(
                     error=f"Collection Chunk non trouvée: {e}",
                     inserted=[],
                 )
+
+            # Créer ou récupérer le Work (toujours, pour la page /documents)
+            work_uuid: Optional[str] = create_or_get_work(
+                client, doc_name, metadata, pages
+            )
 
             # Insérer les métadonnées du document (optionnel)
             doc_uuid: Optional[str] = None
