@@ -666,7 +666,7 @@ def ingest_summaries(
         Recursively processes nested TOC entries (children).
     """
     try:
-        summary_collection: Collection[Any, Any] = client.collections.get("Summary")
+        summary_collection: Collection[Any, Any] = client.collections.get("Summary_v2")
     except Exception as e:
         logger.warning(f"Collection Summary non trouvée: {e}")
         return 0
@@ -824,7 +824,7 @@ def ingest_document(
 
             # Récupérer la collection Chunk
             try:
-                chunk_collection: Collection[Any, Any] = client.collections.get("Chunk")
+                chunk_collection: Collection[Any, Any] = client.collections.get("Chunk_v2")
             except Exception as e:
                 return IngestResult(
                     success=False,
@@ -897,27 +897,15 @@ def ingest_document(
                     "keywords": chunk.get("concepts", chunk.get("keywords", [])),
                     "language": language,
                     "orderIndex": idx,
-                    "work": {
-                        "title": title,
-                        "author": author,
-                    },
-                    "document": {
-                        "sourceId": doc_name,
-                        "edition": edition,
-                    },
+                    # Use flat fields instead of nested objects for Chunk_v2 schema
+                    "workTitle": title,
+                    "workAuthor": author,
+                    "year": metadata.get("year", 0) if metadata.get("year") else 0,
+                    # Note: document reference fields not used in current Chunk_v2 schema
                 }
 
-                # ✅ VALIDATION STRICTE : Vérifier nested objects AVANT insertion
-                try:
-                    validate_chunk_nested_objects(chunk_obj, idx, doc_name)
-                except ValueError as validation_error:
-                    # Log l'erreur et arrêter le traitement
-                    logger.error(f"Chunk validation failed: {validation_error}")
-                    return IngestResult(
-                        success=False,
-                        error=f"Chunk validation error at index {idx}: {validation_error}",
-                        inserted=[],
-                    )
+                # Note: Nested objects validation skipped for Chunk_v2 flat schema
+                # validate_chunk_nested_objects(chunk_obj, idx, doc_name)
 
                 objects_to_insert.append(chunk_obj)
 
@@ -1031,7 +1019,7 @@ def delete_document_chunks(doc_name: str) -> DeleteResult:
 
             # Supprimer les chunks (filtrer sur document.sourceId nested)
             try:
-                chunk_collection: Collection[Any, Any] = client.collections.get("Chunk")
+                chunk_collection: Collection[Any, Any] = client.collections.get("Chunk_v2")
                 result = chunk_collection.data.delete_many(
                     where=wvq.Filter.by_property("document.sourceId").equal(doc_name)
                 )
@@ -1041,7 +1029,7 @@ def delete_document_chunks(doc_name: str) -> DeleteResult:
 
             # Supprimer les summaries (filtrer sur document.sourceId nested)
             try:
-                summary_collection: Collection[Any, Any] = client.collections.get("Summary")
+                summary_collection: Collection[Any, Any] = client.collections.get("Summary_v2")
                 result = summary_collection.data.delete_many(
                     where=wvq.Filter.by_property("document.sourceId").equal(doc_name)
                 )
