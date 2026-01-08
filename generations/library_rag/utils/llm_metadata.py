@@ -215,30 +215,49 @@ INDICES POUR TROUVER LE VRAI TITRE:
 - Répété sur la page de garde et la page de titre
 - Peut contenir un sous-titre après ":"
 
-IMPORTANT - FORMAT DES DONNÉES:
-- N'ajoute JAMAIS d'annotations comme "(correct)", "(à confirmer)", "(possiblement)", etc.
-- Retourne uniquement les noms propres et titres sans commentaires
-- NE METS PAS de phrases comme "À confirmer avec...", "Vérifier si...", "Possiblement..."
-- Le champ "confidence" sert à exprimer ton niveau de certitude
-- Si tu n'es pas sûr du titre, mets le titre le plus probable ET un confidence faible
-- EXEMPLE CORRECT: "title": "La pensée-signe" avec "confidence": {{"title": 0.6}}
-- EXEMPLE INCORRECT: "title": "À confirmer avec le titre exact"
+RÈGLES CRITIQUES - FORMAT DES DONNÉES:
+❌ INTERDIT: N'ajoute JAMAIS d'annotations, commentaires ou instructions dans les valeurs
+❌ INTERDIT: "(correct)", "(à confirmer)", "(possiblement)", "(ex:)", "(si c'est bien...)"
+❌ INTERDIT: "À confirmer avec...", "Vérifier si...", "Possiblement...", "Titre corrigé..."
+❌ INTERDIT: "Auteur à identifier", "Nom de l'auteur si disponible"
 
-RÉPONDS UNIQUEMENT avec un JSON entre balises <JSON></JSON>:
+✅ OBLIGATOIRE: Retourne UNIQUEMENT le titre exact tel qu'il apparaît dans le document
+✅ OBLIGATOIRE: Retourne UNIQUEMENT le nom de l'auteur tel qu'il apparaît
+✅ Si incertain: utilise le champ "confidence" avec un score bas (0.3-0.6)
+✅ Si vraiment introuvable: utilise null (pas de phrase descriptive)
 
+EXEMPLE DE BONNE RÉPONSE (extrait d'un vrai livre):
 <JSON>
 {{
-    "title": "Le vrai titre de l'œuvre (avec sous-titre si présent)",
-    "author": "Prénom Nom de l'auteur principal",
-    "collection": "Nom de la collection ou série (null si absent)",
-    "publisher": "Nom de l'éditeur",
-    "year": 2023,
-    "doi": "10.xxxx/xxxxx (null si absent)",
-    "isbn": "978-x-xxxx-xxxx-x (null si absent)",
+    "title": "La technique et le temps: La faute d'Épiméthée",
+    "author": "Bernard Stiegler",
+    "collection": "Philosophie",
+    "publisher": "Éditions Galilée",
+    "year": 1994,
+    "doi": null,
+    "isbn": "978-2-7186-0489-8",
     "language": "fr",
     "confidence": {{
         "title": 0.95,
-        "author": 0.90
+        "author": 0.98
+    }}
+}}
+</JSON>
+
+EXEMPLE si métadonnées incertaines:
+<JSON>
+{{
+    "title": "Between Past and Future",
+    "author": "Hannah Arendt",
+    "collection": null,
+    "publisher": null,
+    "year": null,
+    "doi": null,
+    "isbn": null,
+    "language": "en",
+    "confidence": {{
+        "title": 0.7,
+        "author": 0.85
     }}
 }}
 </JSON>
@@ -246,7 +265,21 @@ RÉPONDS UNIQUEMENT avec un JSON entre balises <JSON></JSON>:
 DOCUMENT À ANALYSER:
 {content}
 
-Réponds UNIQUEMENT avec le JSON."""
+RAPPEL: Retourne UNIQUEMENT le JSON avec les valeurs EXACTES du document, SANS commentaires ni annotations.
+
+<JSON>
+{{
+    "title": "",
+    "author": "",
+    "collection": null,
+    "publisher": null,
+    "year": null,
+    "doi": null,
+    "isbn": null,
+    "language": "fr",
+    "confidence": {{}}
+}}
+</JSON>"""
 
     logger.info(f"Extraction métadonnées via {provider.upper()} ({model})")
     
