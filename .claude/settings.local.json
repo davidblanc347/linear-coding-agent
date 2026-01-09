@@ -54,7 +54,21 @@
       "Bash(pytest:*)",
       "Bash(start test_sans_beige.html)",
       "Bash(ollama list:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "WebFetch(domain:github.com)",
+      "Bash(nvidia-smi:*)",
+      "Bash(scriptsinstall_pytorch_cuda.bat)",
+      "Bash(cmd /c scripts\\\\install_pytorch_cuda.bat)",
+      "Bash(pip uninstall:*)",
+      "Bash(pip cache:*)",
+      "Bash(wmic process where \"name=''python.exe''\" get processid,commandline)",
+      "Bash(if [ -f \"/tmp/parse_output.log\" ])",
+      "Bash(then tail -100 /tmp/parse_output.log)",
+      "Bash(else echo \"Fichier log non trouvé\")",
+      "Bash(fi)",
+      "WebSearch",
+      "WebFetch(domain:weaviate.io)",
+      "WebFetch(domain:docs.weaviate.io)"
     ]
   }
 }

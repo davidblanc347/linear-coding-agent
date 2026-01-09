@@ -1269,18 +1269,19 @@ def build_prompt_with_context(user_question: str, rag_context: List[Dict[str, An
         'Vous êtes un assistant spécialisé en philosophie...'
     """
     # System instruction
-    system_instruction = """Vous êtes un assistant expert en philosophie. Votre rôle est de fournir des analyses APPROFONDIES et DÉTAILLÉES en vous appuyant sur les passages philosophiques fournis.
+    system_instruction = """Vous êtes un assistant expert en philosophie. Votre rôle est de fournir des analyses APPROFONDIES et DÉTAILLÉES en vous appuyant EXCLUSIVEMENT sur les passages philosophiques fournis.
 
 INSTRUCTIONS IMPÉRATIVES :
 - Fournissez une réponse LONGUE et DÉVELOPPÉE (minimum 500-800 mots)
 - Analysez EN PROFONDEUR tous les aspects de la question
-- Citez ABONDAMMENT les passages fournis avec références précises (auteur, œuvre)
+- Citez ABONDAMMENT les passages fournis avec références précises (auteur, œuvre, numéro de passage)
 - Développez les concepts philosophiques, ne vous contentez PAS de résumés superficiels
 - Explorez les NUANCES, les implications, les relations entre les idées
 - Structurez votre réponse en sections claires (introduction, développement avec sous-parties, conclusion)
 - Si les passages ne couvrent pas tous les aspects, indiquez-le mais développez ce qui est disponible
 - Adoptez un style académique rigoureux digne d'une analyse philosophique universitaire
-- N'inventez JAMAIS d'informations absentes des passages, mais exploitez à fond celles qui y sont"""
+- N'inventez JAMAIS d'informations absentes des passages, mais exploitez à fond celles qui y sont
+- Terminez OBLIGATOIREMENT par une section "## Sources utilisées" listant les passages que vous avez cités"""
 
     # Build context section
     context_section = "\n\nPASSAGES PHILOSOPHIQUES :\n\n"
@@ -1319,7 +1320,20 @@ Votre réponse doit :
 3. Explorer les implications philosophiques, les concepts-clés, les relations entre les idées
 4. Conclure en synthétisant l'apport des passages à la question posée
 
-Ne vous limitez PAS à un résumé superficiel. Développez, analysez, approfondissez. C'est une discussion philosophique universitaire, pas un tweet."""
+Ne vous limitez PAS à un résumé superficiel. Développez, analysez, approfondissez. C'est une discussion philosophique universitaire, pas un tweet.
+
+⚠️ OBLIGATION CRITIQUE - SOURCES :
+Vous DEVEZ terminer votre réponse par une section "## Sources utilisées" listant UNIQUEMENT les passages que vous avez cités.
+Format OBLIGATOIRE :
+
+## Sources utilisées
+
+- **Auteur, Titre de l'œuvre** (Passage N)
+- **Auteur, Titre de l'œuvre** (Passage N)
+
+❌ INTERDIT : N'ajoutez JAMAIS de références bibliographiques qui ne sont pas dans les passages fournis ci-dessus.
+❌ INTERDIT : N'inventez PAS de citations de Chalmers, Dennett, Baars, etc. si elles ne sont pas dans les passages.
+✅ OBLIGATOIRE : Listez UNIQUEMENT les sources des passages numérotés ci-dessus que vous avez effectivement utilisés."""
 
     # Combine all sections
     full_prompt = system_instruction + context_section + question_section + final_instruction
