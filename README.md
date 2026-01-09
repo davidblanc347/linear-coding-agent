@@ -1,554 +1,463 @@
-# Autonomous Coding Agent Demo (Linear-Integrated)
+# Library RAG - Système de Recherche Philosophique Avancé
 
-A minimal harness demonstrating long-running autonomous coding with the Claude Agent SDK. This demo implements a two-agent pattern (initializer + coding agent) with **Linear as the core project management system** for tracking all work.
+Système RAG (Retrieval-Augmented Generation) dual pour la recherche philosophique et la mémoire conversationnelle, propulsé par GPU embedder et Weaviate.
 
-## Key Features
+## 🎯 Vue d'Ensemble
 
-- **Linear Integration**: All work is tracked as Linear issues, not local files
-- **Real-time Visibility**: Watch agent progress directly in your Linear workspace
-- **Session Handoff**: Agents communicate via Linear comments, not text files
-- **Two-Agent Pattern**: Initializer creates Linear project & issues, coding agents implement them
-- **Initializer Bis**: Add new features to existing projects without re-initializing
-- **Browser Testing**: Puppeteer MCP for UI verification
-- **Claude Opus 4.5**: Uses Claude's most capable model by default
+Library RAG combine deux systèmes de recherche sémantique distincts:
 
-## Prerequisites
+1. **📚 Library Philosophique** - Base documentaire de textes philosophiques (œuvres, chunks, résumés)
+2. **🧠 Memory Ikario** - Système de mémoire conversationnelle (pensées et conversations)
 
-### 1. Install Claude Code CLI and Python SDK
+**Architecture**: 5 collections Weaviate + GPU embedder (NVIDIA RTX 4070) + Mistral API
+
+## 🏗️ Architecture
+
+### Collections Weaviate (5)
+
+```
+📦 Library Philosophique (3 collections)
+├─ Work           → Métadonnées des œuvres philosophiques
+├─ Chunk_v2       → 5355 passages de texte (1024-dim vectors)
+└─ Summary_v2     → Résumés hiérarchiques des documents
+
+🧠 Memory Ikario (2 collections)
+├─ Thought        → 104 pensées (réflexions, insights)
+└─ Conversation   → 12 conversations avec 380 messages
+```
+
+### GPU Embedder
+
+- **Modèle**: BAAI/bge-m3 (1024 dimensions, 8192 tokens context)
+- **GPU**: NVIDIA RTX 4070 Laptop (PyTorch CUDA + FP16)
+- **Performance**: 30-70x plus rapide que Docker text2vec-transformers
+- **Usage**: Vectorisation manuelle pour ingestion + requêtes
+
+### Stack Technique
+
+| Composant | Technologie | Rôle |
+|-----------|-------------|------|
+| **Vector DB** | Weaviate 1.34.4 | Stockage + recherche vectorielle |
+| **Embeddings** | Python GPU embedder | Vectorisation (ingestion + requêtes) |
+| **OCR** | Mistral OCR API | Extraction texte depuis PDF |
+| **LLM** | Mistral Large / Ollama | Génération de réponses RAG |
+| **Web** | Flask 3.0 + SSE | Interface web avec streaming |
+| **Tests** | Puppeteer + pytest | Validation automatisée |
+
+## 🚀 Démarrage Rapide
+
+### 1. Prérequis
 
 ```bash
-# Install Claude Code CLI (latest version required)
-npm install -g @anthropic-ai/claude-code
+# Python 3.10+
+python --version
 
-# Install Python dependencies
+# CUDA 12.4+ (pour GPU embedder)
+nvidia-smi
+
+# Docker (pour Weaviate)
+docker --version
+```
+
+### 2. Installation
+
+```bash
+# Cloner le projet
+git clone <repo-url>
+cd linear_coding_library_rag
+
+# Créer environnement virtuel
+cd generations/library_rag
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Installer dépendances
 pip install -r requirements.txt
+
+# PyTorch avec CUDA (si pas déjà installé)
+pip install torch --index-url https://download.pytorch.org/whl/cu124
 ```
 
-### 2. Set Up Authentication
-
-Create a `.env` file in the root directory by copying the example:
+### 3. Configuration
 
 ```bash
+# Copier le fichier d'exemple
 cp .env.example .env
+
+# Éditer .env avec vos clés API
+nano .env
 ```
 
-Then configure your credentials in the `.env` file:
-
-**1. Claude Code OAuth Token:**
+**Variables requises**:
 ```bash
-# Generate the token using Claude Code CLI
-claude setup-token
+# Mistral API (OCR + LLM)
+MISTRAL_API_KEY=your-mistral-api-key
 
-# Add to .env file:
-CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
+# Ollama (optionnel, pour LLM local)
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-**2. Linear API Key:**
-```bash
-# Get your API key from: https://linear.app/YOUR-TEAM/settings/api
-# Add to .env file:
-LINEAR_API_KEY='lin_api_xxxxxxxxxxxxx'
-
-# Optional: Linear Team ID (if not set, agent will list teams)
-LINEAR_TEAM_ID='your-team-id'
-```
-
-**Important:** The `.env` file is already in `.gitignore` - never commit it!
-
-### 3. Verify Installation
+### 4. Lancer les Services
 
 ```bash
-claude --version  # Should be latest version
-pip show claude-code-sdk  # Check SDK is installed
+# Démarrer Weaviate
+docker compose up -d
+
+# Vérifier que Weaviate est prêt
+curl http://localhost:8080/v1/.well-known/ready
+
+# Lancer Flask
+python flask_app.py
 ```
 
-## Quick Start
+**URLs**:
+- 🌐 Flask: http://localhost:5000
+- 🗄️ Weaviate: http://localhost:8080
 
-### Option 1: Use the Example (Claude Clone)
+## 📖 Utilisation
+
+### Interface Web
+
+Accéder à http://localhost:5000 pour:
+
+| Page | URL | Description |
+|------|-----|-------------|
+| **Accueil** | `/` | Dashboard principal |
+| **Recherche** | `/search` | Recherche dans library philosophique |
+| **Chat** | `/chat` | Chat RAG avec contexte sémantique |
+| **Memories** | `/memories` | Recherche dans pensées et messages |
+| **Conversations** | `/conversations` | Historique des conversations |
+| **Upload** | `/upload` | Ingestion de nouveaux PDF |
+
+### 1. Recherche Philosophique
+
+**Modes de recherche** (via `/search`):
+
+- **📄 Simple**: Recherche directe dans les chunks
+- **🌳 Hiérarchique**: Recherche par sections avec contexte
+- **📚 Résumés**: Recherche dans les résumés de haut niveau
+
+**Exemple**:
+```
+Requête: "la conscience selon Turing"
+→ 16 résultats pertinents
+→ Filtrage par auteur/œuvre
+→ GPU embedder: ~17ms/requête
+```
+
+### 2. Chat RAG
+
+**Fonctionnalités** (via `/chat`):
+
+- 💬 Réponses longues et détaillées (500-800 mots)
+- 📚 Citations directes des passages sources
+- 🎯 Filtrage par œuvres (18 œuvres disponibles)
+- 🔄 Streaming SSE (Server-Sent Events)
+- 📖 Section "Sources utilisées" obligatoire
+
+**Exemple de session**:
+```
+Question: "What is a Turing machine?"
+→ Recherche sémantique: 11 chunks sur 5 sections
+→ Génération LLM: ~30 secondes (Mistral Large)
+→ Réponse académique détaillée avec sources
+```
+
+### 3. Memory Ikario
+
+**Recherche dans pensées** (via `/memories`):
+
+```
+Requête: "test search"
+→ 10 pensées pertinentes
+→ Type: reflection, test, spontaneous
+→ Concepts associés
+```
+
+**Recherche dans conversations**:
+
+```
+Requête: "philosophie intelligence"
+→ Conversations pertinentes
+→ Messages contextuels
+→ Métadonnées (catégorie, date)
+```
+
+### 4. Ingestion de Documents
+
+**Via interface web** (`/upload`):
+
+1. Upload PDF (max 100 MB)
+2. Sélection options:
+   - LLM provider (Mistral/Ollama)
+   - Chunking sémantique (optionnel)
+   - OCR annotations (optionnel)
+3. Traitement automatique:
+   - OCR Mistral (~0.003€/page)
+   - Extraction métadonnées (auteur, titre, année)
+   - Chunking intelligent
+   - Vectorisation GPU (~15ms/chunk)
+   - Insertion Weaviate
+
+**Via Python**:
+
+```python
+from utils.pdf_pipeline import process_pdf
+
+result = process_pdf(
+    pdf_path="document.pdf",
+    use_llm=True,
+    llm_provider="mistral",
+    ingest_to_weaviate=True
+)
+
+print(f"Chunks: {result['chunks_count']}")
+print(f"Cost: €{result['cost_total']:.4f}")
+```
+
+## 🧪 Tests
+
+### Tests Automatisés
 
 ```bash
-# Initialize the Claude Clone example project
-python autonomous_agent_demo.py --project-dir ./ikario_body
+# Test ingestion GPU
+python test_gpu_mistral.py
 
-# Add new features to an existing project
-python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_theme_customization.txt
+# Test recherche sémantique (Puppeteer)
+node test_search_simple.js
+
+# Test chat RAG (Puppeteer)
+node test_chat_puppeteer.js
+
+# Test memories/conversations (Puppeteer)
+node test_memories_conversations.js
 ```
 
-For testing with limited iterations:
-```bash
-python autonomous_agent_demo.py --project-dir ./ikario_body --max-iterations 3
-```
+**Résultats attendus**:
+- ✅ Ingestion: 9 chunks en ~1.2s
+- ✅ Recherche: 16 résultats en ~2s
+- ✅ Chat: 11 chunks, 5 sections, réponse complète
+- ✅ Memories: API backend fonctionnelle
 
-### Option 2: Create Your Own Application
-
-See the [Creating a New Application](#creating-a-new-application) section below for detailed instructions on creating a custom application from scratch.
-
-## How It Works
-
-### Linear-Centric Workflow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    LINEAR-INTEGRATED WORKFLOW               │
-├─────────────────────────────────────────────────────────────┤
-│  app_spec.txt ──► Initializer Agent ──► Linear Issues (50) │
-│                                              │               │
-│                    ┌─────────────────────────▼──────────┐   │
-│                    │        LINEAR WORKSPACE            │   │
-│                    │  ┌────────────────────────────┐    │   │
-│                    │  │ Issue: Auth - Login flow   │    │   │
-│                    │  │ Status: Todo → In Progress │    │   │
-│                    │  │ Comments: [session notes]  │    │   │
-│                    │  └────────────────────────────┘    │   │
-│                    └────────────────────────────────────┘   │
-│                                              │               │
-│                    Coding Agent queries Linear              │
-│                    ├── Search for Todo issues               │
-│                    ├── Update status to In Progress         │
-│                    ├── Implement & test with Puppeteer      │
-│                    ├── Add comment with implementation notes│
-│                    └── Update status to Done                │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Two-Agent Pattern
-
-1. **Initializer Agent (Session 1):**
-   - Reads `app_spec.txt`
-   - Lists teams and creates a new Linear project
-   - Creates 50 Linear issues with detailed test steps
-   - Creates a META issue for session tracking
-   - Sets up project structure, `init.sh`, and git
-
-2. **Coding Agent (Sessions 2+):**
-   - Queries Linear for highest-priority Todo issue
-   - Runs verification tests on previously completed features
-   - Claims issue (status → In Progress)
-   - Implements the feature
-   - Tests via Puppeteer browser automation
-   - Adds implementation comment to issue
-   - Marks complete (status → Done)
-   - Updates META issue with session summary
-
-### Initializer Bis: Adding New Features
-
-The **Initializer Bis** agent allows you to add new features to an existing project without re-initializing it. This is useful when you want to extend your application with additional functionality.
-
-**How it works:**
-1. Create a new specification file (e.g., `app_spec_theme_customization.txt`) in the `prompts/` directory
-2. Run the agent with `--new-spec` flag pointing to your new spec file
-3. The Initializer Bis agent will:
-   - Read the existing project state from `.linear_project.json`
-   - Read the new specification file
-   - Create new Linear issues for each `<feature>` tag in the spec
-   - Add these issues to the existing Linear project
-   - Update the META issue with information about the new features
-   - Copy the new spec file to the project directory
-
-**Example:**
-```bash
-# Add theme customization features to an existing project
-python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_theme_customization.txt
-```
-
-This will create multiple Linear issues (one per `<feature>` tag) that will be worked on by subsequent coding agent sessions.
-
-### Session Handoff via Linear
-
-Instead of local text files, agents communicate through:
-- **Issue Comments**: Implementation details, blockers, context
-- **META Issue**: Session summaries and handoff notes
-- **Issue Status**: Todo / In Progress / Done workflow
-
-## Configuration (.env file)
-
-All configuration is done via a `.env` file in the root directory.
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth token (from `claude setup-token`) | Yes |
-| `LINEAR_API_KEY` | Linear API key for MCP access | Yes |
-| `LINEAR_TEAM_ID` | Linear Team ID (if not set, agent will list teams and ask) | No |
-
-## Command Line Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--project-dir` | Directory for the project | `./autonomous_demo_project` |
-| `--max-iterations` | Max agent iterations | Unlimited |
-| `--model` | Claude model to use | `claude-opus-4-5-20251101` |
-| `--new-spec` | Name of new specification file to add (e.g., 'app_spec_new1.txt'). Use this to add new features to an existing project. | None |
-
-## Project Structure
-
-```
-linear-agent-harness/
-├── autonomous_agent_demo.py  # Main entry point
-├── agent.py                  # Agent session logic
-├── client.py                 # Claude SDK + MCP client configuration
-├── security.py               # Bash command allowlist and validation
-├── progress.py               # Progress tracking utilities
-├── prompts.py                # Prompt loading utilities
-├── linear_config.py          # Linear configuration constants
-├── prompts/
-│   ├── app_spec.txt          # Application specification (Claude Clone example)
-│   ├── app_spec_template.txt # Template for creating new applications
-│   ├── app_spec_theme_customization.txt  # Example: Theme customization spec
-│   ├── app_spec_mistral_extensible.txt   # Example: Mistral provider spec
-│   ├── initializer_prompt.md # First session prompt (creates Linear issues)
-│   ├── initializer_bis_prompt.md # Prompt for adding new features
-│   └── coding_prompt.md      # Continuation session prompt (works issues)
-└── requirements.txt          # Python dependencies
-```
-
-## Generated Project Structure
-
-After running, your project directory will contain:
-
-```
-ikario_body/
-├── .linear_project.json      # Linear project state (marker file)
-├── app_spec.txt              # Copied specification
-├── app_spec_theme_customization.txt  # New spec file (if using --new-spec)
-├── init.sh                   # Environment setup script
-├── .claude_settings.json     # Security settings
-└── [application files]       # Generated application code
-```
-
-## MCP Servers Used
-
-| Server | Transport | Purpose |
-|--------|-----------|---------|
-| **Linear** | HTTP (Streamable HTTP) | Project management - issues, status, comments |
-| **Puppeteer** | stdio | Browser automation for UI testing |
-
-## Security Model
-
-This demo uses defense-in-depth security (see `security.py` and `client.py`):
-
-1. **OS-level Sandbox:** Bash commands run in an isolated environment
-2. **Filesystem Restrictions:** File operations restricted to project directory
-3. **Bash Allowlist:** Only specific commands permitted (npm, node, git, etc.)
-4. **MCP Permissions:** Tools explicitly allowed in security settings
-
-## Linear Setup
-
-Before running, ensure you have:
-
-1. A Linear workspace with at least one team
-2. An API key with read/write permissions (from Settings > API)
-3. The agent will automatically detect your team and create a project
-
-The initializer agent will create:
-- A new Linear project named after your app
-- 50 feature issues based on `app_spec.txt`
-- 1 META issue for session tracking and handoff
-
-All subsequent coding agents will work from this Linear project.
-
-## Creating a New Application
-
-This framework is designed to be **generic and reusable** for any web application. Here's how to create your own application from scratch.
-
-### Understanding the Framework Structure
-
-#### Generic Framework Files (DO NOT MODIFY)
-
-These files work for all applications and should remain unchanged:
-
-```
-linear-coding-agent/
-├── autonomous_agent_demo.py  # Main entry point
-├── agent.py                  # Agent session logic
-├── client.py                 # Claude SDK + MCP client configuration
-├── security.py               # Bash command allowlist and validation
-├── progress.py               # Progress tracking utilities
-├── prompts.py                # Prompt loading utilities
-├── linear_config.py          # Linear configuration constants
-├── requirements.txt          # Python dependencies
-└── prompts/
-    ├── initializer_prompt.md      # First session prompt template
-    ├── initializer_bis_prompt.md  # New features prompt template
-    └── coding_prompt.md           # Continuation session prompt template
-```
-
-#### Application-Specific Files (CREATE THESE)
-
-The **only file you need to create** is your application specification:
-
-```
-prompts/
-└── app_spec.txt  # Your application specification (XML format)
-```
-
-### Step-by-Step Guide
-
-#### Step 1: Create Your Specification File
-
-Create `prompts/app_spec.txt` using this XML structure:
-
-```xml
-<project_specification>
-  <project_name>Your Application Name</project_name>
-
-  <overview>
-    Complete description of your application. Explain what you want to build,
-    main objectives, and key features.
-  </overview>
-
-  <technology_stack>
-    <frontend>
-      <framework>React with Vite</framework>
-      <styling>Tailwind CSS</styling>
-      <state_management>React hooks</state_management>
-    </frontend>
-    <backend>
-      <runtime>Node.js with Express</runtime>
-      <database>SQLite</database>
-    </backend>
-  </technology_stack>
-
-  <prerequisites>
-    <environment_setup>
-      - List of prerequisites (dependencies, API keys, etc.)
-    </environment_setup>
-  </prerequisites>
-
-  <core_features>
-    <feature_1>
-      <title>Feature 1 Title</title>
-      <description>Detailed description</description>
-      <priority>1</priority>
-      <category>frontend</category>
-      <test_steps>
-        1. Test step 1
-        2. Test step 2
-      </test_steps>
-    </feature_1>
-
-    <feature_2>
-      <!-- More features -->
-    </feature_2>
-  </core_features>
-</project_specification>
-```
-
-#### Step 2: Define Your Features
-
-Each feature should have:
-
-- **Title**: Clear, descriptive title
-- **Description**: Complete explanation of what it does
-- **Priority**: 1 (urgent) to 4 (optional)
-- **Category**: `frontend`, `backend`, `database`, `auth`, `integration`, etc.
-- **Test Steps**: Precise verification steps
-
-Example feature:
-
-```xml
-<feature_1>
-  <title>User Authentication - Login Flow</title>
-  <description>
-    Implement authentication system with:
-    - Login form (email/password)
-    - Client and server-side validation
-    - JWT session management
-    - Password reset page
-  </description>
-  <priority>1</priority>
-  <category>auth</category>
-  <test_steps>
-    1. Access login page
-    2. Enter invalid email → see error
-    3. Enter valid credentials → redirect to dashboard
-    4. Verify JWT token is stored
-    5. Test logout functionality
-  </test_steps>
-</feature_1>
-```
-
-#### Step 3: Launch Initialization
-
-Once your `app_spec.txt` is ready:
+### Tests Manuels
 
 ```bash
-python autonomous_agent_demo.py --project-dir ./my_new_app
+# Vérifier GPU embedder
+curl http://localhost:5000/search?q=Turing
+
+# Vérifier Weaviate
+curl http://localhost:8080/v1/meta
+
+# Vérifier nombre de chunks
+python -c "import weaviate; c=weaviate.connect_to_local(); print(c.collections.get('Chunk_v2').aggregate.over_all()); c.close()"
 ```
 
-The initializer agent will:
-1. Read your `app_spec.txt`
-2. Create a Linear project
-3. Create ~50 Linear issues based on your spec
-4. Initialize project structure, `init.sh`, and git
+## 📊 Métriques de Performance
 
-#### Step 4: Monitor Development
+### Ingestion
 
-Coding agents will then:
-- Work on Linear issues one by one
-- Implement features
-- Test with Puppeteer browser automation
-- Update issues with implementation comments
-- Mark issues as complete
+| Métrique | Avant (Docker) | Après (GPU) | Amélioration |
+|----------|---------------|-------------|--------------|
+| **Vitesse** | 500-1000ms/chunk | 15ms/chunk | **30-70x** |
+| **RAM** | 10 GB (container) | 0 GB | **-10 GB** |
+| **VRAM** | 0 GB | 2.6 GB | +2.6 GB |
+| **Architecture** | Hybride | Unifiée | Simplifiée |
 
-### Minimal Example
+### Recherche
 
-Here's a minimal Todo App example to get started:
+| Opération | Temps | Détails |
+|-----------|-------|---------|
+| **Vectorisation requête** | ~17ms | GPU embedder (modèle chargé) |
+| **Recherche Weaviate** | ~100-500ms | Selon complexité |
+| **Recherche hiérarchique** | ~500ms | 11 chunks sur 5 sections |
+| **Chat complet** | ~30s | Inclut génération LLM |
 
-```xml
-<project_specification>
-  <project_name>Todo App - Task Manager</project_name>
+### Ressources
 
-  <overview>
-    Simple web application for managing task lists.
-    Users can create, edit, complete, and delete tasks.
-  </overview>
+- **VRAM**: 2.6 GB peak (RTX 4070, 8 GB disponibles)
+- **Modèle**: BAAI/bge-m3 (1024 dims, FP16 precision)
+- **Batch size**: 48 (optimal pour RTX 4070)
 
-  <technology_stack>
-    <frontend>
-      <framework>React with Vite</framework>
-      <styling>Tailwind CSS</styling>
-    </frontend>
-    <backend>
-      <runtime>Node.js with Express</runtime>
-      <database>SQLite</database>
-    </backend>
-  </technology_stack>
+## 🔧 Configuration Avancée
 
-  <core_features>
-    <feature_1>
-      <title>Main Interface - Task List</title>
-      <description>Display a list of all tasks with their status</description>
-      <priority>1</priority>
-      <category>frontend</category>
-      <test_steps>
-        1. Open application
-        2. Verify task list displays
-      </test_steps>
-    </feature_1>
+### GPU Embedder
 
-    <feature_2>
-      <title>Create New Task</title>
-      <description>Form to add a new task to the list</description>
-      <priority>1</priority>
-      <category>frontend</category>
-      <test_steps>
-        1. Click "New Task"
-        2. Enter a title
-        3. Click "Add"
-        4. Verify task appears in list
-      </test_steps>
-    </feature_2>
-  </core_features>
-</project_specification>
+**Fichier**: `memory/core/embedding_service.py`
+
+```python
+class GPUEmbeddingService:
+    model_name = "BAAI/bge-m3"
+    embedding_dim = 1024
+    optimal_batch_size = 48  # Ajuster selon GPU
 ```
 
-### Best Practices
+**Réduire VRAM** (si Out of Memory):
+```python
+optimal_batch_size = 24  # Au lieu de 48
+```
 
-#### 1. Be Detailed but Structured
+### Weaviate
 
-Each feature must have:
-- Clear title
-- Complete description of functionality
-- Precise test steps
-- Priority (1=urgent, 4=optional)
+**Fichier**: `docker-compose.yml`
 
-#### 2. Use Consistent XML Format
+```yaml
+services:
+  weaviate:
+    mem_limit: 8g        # Limiter RAM
+    cpus: 4              # Limiter CPU
+```
 
-Follow the structure shown above for all features using `<feature_X>` tags.
+### LLM Chat
 
-#### 3. Organize by Categories
+**Fichier**: `flask_app.py` (ligne 1272)
 
-Group features by category:
-- `auth`: Authentication
-- `frontend`: User interface
-- `backend`: API and server logic
-- `database`: Models and migrations
-- `integration`: External integrations
+```python
+# Personnaliser le prompt système
+system_instruction = """
+Vous êtes un assistant expert en philosophie...
+"""
+```
 
-#### 4. Prioritize Features
+## 📚 Documentation
 
-- **Priority 1**: Critical features (auth, database)
-- **Priority 2**: Important features (core functionality)
-- **Priority 3**: Secondary features (UX improvements)
-- **Priority 4**: Nice-to-have (polish, optimizations)
+### Structure du Projet
 
-### Using the Claude Clone as Reference
+```
+generations/library_rag/
+├── flask_app.py              # Application Flask principale
+├── schema.py                 # Schémas Weaviate (5 collections)
+├── docker-compose.yml        # Weaviate (sans text2vec-transformers)
+├── requirements.txt          # Dépendances Python
+├── .env.example              # Configuration exemple
+├── utils/
+│   ├── pdf_pipeline.py       # Pipeline ingestion PDF
+│   ├── weaviate_ingest.py    # Ingestion GPU vectorization
+│   ├── llm_metadata.py       # Extraction métadonnées LLM
+│   └── ocr_processor.py      # Mistral OCR
+├── memory/
+│   └── core/
+│       └── embedding_service.py  # GPU embedder
+├── templates/                # Templates HTML
+└── static/                   # CSS, JS, images
 
-The Claude Clone example in `prompts/app_spec.txt` is excellent reference material:
+docs/
+├── migration-gpu/            # Documentation migration GPU embedder
+│   ├── MIGRATION_GPU_EMBEDDER_SUCCESS.md
+│   ├── TESTS_COMPLETS_GPU_EMBEDDER.md
+│   └── ...
+└── project_progress.md       # Historique développement
 
-#### ✅ Elements to Copy/Adapt:
+tests/
+├── test_gpu_mistral.py       # Test ingestion
+├── test_search_simple.js     # Test recherche
+├── test_chat_puppeteer.js    # Test chat
+└── test_memories_conversations.js  # Test memories
+```
 
-1. **XML Structure**: Overall structure with `<project_specification>`, `<overview>`, `<technology_stack>`, etc.
-2. **Feature Format**: How to structure `<feature_X>` tags with all required fields
-3. **Technical Details**: How to describe technology stack, prerequisites, API endpoints, database schema, UI specs
+### Documentation Détaillée
 
-#### ❌ Elements NOT to Copy:
+- **[Migration GPU Embedder](docs/migration-gpu/MIGRATION_GPU_EMBEDDER_SUCCESS.md)** - Rapport de migration détaillé
+- **[Tests Complets](docs/migration-gpu/TESTS_COMPLETS_GPU_EMBEDDER.md)** - Résultats de tous les tests
+- **[Project Progress](docs/project_progress.md)** - Historique du développement
+- **[CHANGELOG](CHANGELOG.md)** - Historique des versions
 
-1. **Specific Content**: Details about "Claude API", "artifacts", "conversations" are app-specific
-2. **Business Features**: Adapt features to your application's needs
+## 🐛 Dépannage
 
-### Checklist for New Application
+### Problème: "No module named 'memory'"
 
-- [ ] Create `prompts/app_spec.txt` with your specification
-- [ ] Define `<project_name>` for your application
-- [ ] Write complete `<overview>`
-- [ ] Specify `<technology_stack>` (frontend + backend)
-- [ ] List all `<prerequisites>`
-- [ ] Define all `<core_features>` with `<feature_X>` tags
-- [ ] Add `<test_steps>` for each feature
-- [ ] Launch: `python autonomous_agent_demo.py --project-dir ./my_app`
-- [ ] Verify in Linear that issues are created correctly
+**Solution**:
+```python
+# Vérifier sys.path dans weaviate_ingest.py
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+```
 
-## Customization
+### Problème: "CUDA not available"
 
-### Adding New Features to Existing Projects
+**Solution**:
+```bash
+# Réinstaller PyTorch avec CUDA
+pip uninstall torch
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+```
 
-1. Create a new specification file in `prompts/` directory (e.g., `app_spec_new_feature.txt`)
-2. Format it with `<feature>` tags following the same structure as `app_spec.txt`
-3. Run with `--new-spec` flag:
-   ```bash
-   python autonomous_agent_demo.py --project-dir ./ikario_body --new-spec app_spec_new_feature.txt
-   ```
-4. The Initializer Bis agent will create new Linear issues for each feature in the spec file
+### Problème: "Out of Memory (VRAM)"
 
-### Adjusting Issue Count
+**Solution**:
+```python
+# Réduire batch size dans embedding_service.py
+optimal_batch_size = 24  # Au lieu de 48
+```
 
-Edit `prompts/initializer_prompt.md` and change "50 issues" to your desired count.
+### Problème: Weaviate connection failed
 
-### Modifying Allowed Commands
+**Solution**:
+```bash
+# Vérifier que Weaviate est lancé
+docker compose ps
 
-Edit `security.py` to add or remove commands from `ALLOWED_COMMANDS`.
+# Vérifier les logs
+docker compose logs weaviate
 
-## Troubleshooting
+# Redémarrer si nécessaire
+docker compose restart
+```
 
-**"CLAUDE_CODE_OAUTH_TOKEN not found in .env file"**
-1. Run `claude setup-token` to generate a token
-2. Copy `.env.example` to `.env`
-3. Add your token to the `.env` file
+### Problème: Recherche ne renvoie rien
 
-**"LINEAR_API_KEY not found in .env file"**
-1. Get your API key from `https://linear.app/YOUR-TEAM/settings/api`
-2. Add it to your `.env` file
+**Solution**:
+```bash
+# Vérifier nombre de chunks dans Weaviate
+python -c "import weaviate; c=weaviate.connect_to_local(); print(f'Chunks: {c.collections.get(\"Chunk_v2\").aggregate.over_all().total_count}'); c.close()"
 
-**"Appears to hang on first run"**
-Normal behavior. The initializer is creating a Linear project and 50 issues with detailed descriptions. Watch for `[Tool: mcp__linear__create_issue]` output.
+# Réinjecter les données si nécessaire
+python schema.py --recreate-chunk
+```
 
-**"Command blocked by security hook"**
-The agent tried to run a disallowed command. Add it to `ALLOWED_COMMANDS` in `security.py` if needed.
+## 🔐 Sécurité
 
-**"MCP server connection failed"**
-Verify your `LINEAR_API_KEY` in the `.env` file is valid and has appropriate permissions. The Linear MCP server uses HTTP transport at `https://mcp.linear.app/mcp`.
+- `.env` dans `.gitignore` (ne jamais commit les clés API)
+- API Mistral: Facturation par usage (~€0.003/page OCR)
+- Weaviate: Pas d'authentification (dev local uniquement)
+- Flask: Mode debug (désactiver en production)
 
-## Viewing Progress
+## 📈 Roadmap
 
-Open your Linear workspace to see:
-- The project created by the initializer agent
-- All 50 issues organized under the project
-- Real-time status changes (Todo → In Progress → Done)
-- Implementation comments on each issue
-- Session summaries on the META issue
-- New issues added by Initializer Bis when using `--new-spec`
+### Court Terme
+- [ ] Monitorer performance GPU en production
+- [ ] Benchmarks formels sur gros documents (100+ pages)
+- [ ] Tests unitaires pour `vectorize_chunks_batch()`
 
-## License
+### Moyen Terme
+- [ ] API REST complète (OpenAPI/Swagger)
+- [ ] Support multi-utilisateurs avec authentification
+- [ ] Export résultats (PDF, Word, citations)
 
-MIT License - see [LICENSE](LICENSE) for details.
+### Long Terme
+- [ ] Fine-tuning BGE-M3 sur corpus philosophique
+- [ ] Support langues supplémentaires (grec ancien, latin)
+- [ ] Clustering automatique des concepts philosophiques
+
+## 🤝 Contribution
+
+1. Fork le projet
+2. Créer une branche (`git checkout -b feature/amazing`)
+3. Commit (`git commit -m 'Add amazing feature'`)
+4. Push (`git push origin feature/amazing`)
+5. Ouvrir une Pull Request
+
+## 📄 Licence
+
+MIT License - voir [LICENSE](LICENSE) pour détails.
+
+## 🙏 Remerciements
+
+- **Weaviate** - Vector database
+- **BAAI** - BGE-M3 embedding model
+- **Mistral AI** - OCR et LLM API
+- **Anthropic** - Claude pour développement assisté
+
+---
+
+**Généré avec**: Claude Sonnet 4.5
+**Dernière mise à jour**: Janvier 2026
+**Version**: 2.0 (GPU Embedder Migration)
