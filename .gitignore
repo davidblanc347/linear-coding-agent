@@ -26,5 +26,23 @@ restoration_remaining_log.txt
 summary_generation_progress.json
 nul
 
+# Test files and temporary scripts (Jan 2026)
+test_*.txt
+test_ingestion*.py
+test_direct*.py
+test_upload*.py
+*_backup.json
+chunks_to_vectorize.json
+output/
+check_chunks.py
+verify_works.py
+complete_*.py
+extract_*.py
+fast_extract.py
+stream_extract.py
+quick_vectorize.py
+vectorize_remaining.py
+migrate_chunk_*.py
+
 # Archives (migration scripts moved here)
 archive/
