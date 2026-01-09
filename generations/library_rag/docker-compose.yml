@@ -1,23 +1,24 @@
-# Library RAG - Weaviate + BGE-M3 Embeddings
-# ===========================================
+# Library RAG - Weaviate + Python GPU Embedder
+# ==============================================
 #
-# This docker-compose runs Weaviate with BAAI/bge-m3 embedding model.
+# This docker-compose runs Weaviate with manual vectorization via Python GPU embedder.
 #
-# BGE-M3 Advantages:
-#   - 1024 dimensions (vs 384 for MiniLM-L6) - 2.7x richer representation
-#   - 8192 token context (vs 512) - 16x longer sequences
+# BGE-M3 GPU Embedder (Python):
+#   - 1024 dimensions - Rich semantic representation
+#   - 8192 token context - Long document support
 #   - Superior multilingual support (Greek, Latin, French, English)
-#   - Better trained on academic/philosophical texts
+#   - GPU acceleration (NVIDIA RTX 4070) - 30-70x faster than Docker text2vec
+#   - PyTorch CUDA + FP16 precision
 #
-# GPU Configuration:
-#   - ENABLE_CUDA="1" - Uses NVIDIA GPU for faster vectorization
-#   - ENABLE_CUDA="0" - Uses CPU only (slower but functional)
-#   - GPU device mapping included for CUDA acceleration
+# Architecture (Jan 2026):
+#   - Ingestion: Python GPU embedder (manual vectorization)
+#   - Queries: Python GPU embedder (manual vectorization)
+#   - Weaviate: Vector storage only (no auto-vectorization)
 #
-# Migration Note (2024-12):
-#   Migrated from sentence-transformers-multi-qa-MiniLM-L6-cos-v1 (384-dim)
-#   to BAAI/bge-m3 (1024-dim). All collections were deleted and recreated.
-#   See MIGRATION_BGE_M3.md for details.
+# Migration Notes:
+#   - Dec 2024: Migrated from MiniLM-L6 (384-dim) to BGE-M3 (1024-dim)
+#   - Jan 2026: Migrated from Docker text2vec-transformers to Python GPU embedder
+#   - See MIGRATION_GPU_EMBEDDER_SUCCESS.md for details
 
 services:
   weaviate:
@@ -35,9 +36,8 @@ services:
       CLUSTER_DATA_BIND_PORT: "7947"
       # Fix for "No private IP address found" error
       CLUSTER_JOIN: ""
-      DEFAULT_VECTORIZER_MODULE: "text2vec-transformers"
-      ENABLE_MODULES: "text2vec-transformers"
-      TRANSFORMERS_INFERENCE_API: "http://text2vec-transformers:8080"
+      # NOTE: Manual vectorization via Python GPU embedder - no modules needed
+      # DEFAULT_VECTORIZER_MODULE and ENABLE_MODULES removed (Jan 2026)
       # Limits to prevent OOM crashes
       GOMEMLIMIT: "6GiB"
       GOGC: "100"
@@ -46,10 +46,6 @@ services:
     mem_limit: 8g
     memswap_limit: 10g
     cpus: 4
-    # Ensure Weaviate waits for text2vec-transformers to be healthy before starting
-    depends_on:
-      text2vec-transformers:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/v1/.well-known/ready"]
       interval: 30s
@@ -57,38 +53,10 @@ services:
       retries: 3
       start_period: 60s
 
-  text2vec-transformers:
-    # BAAI/bge-m3: Multilingual embedding model (1024 dimensions)
-    # Superior for philosophical texts (Greek, Latin, French, English)
-    # 8192 token context window (16x longer than MiniLM-L6)
-    # Using ONNX version (only available format in Weaviate registry)
-    #
-    # GPU LIMITATION (Dec 2024):
-    #   - Weaviate only provides ONNX version of BGE-M3 (no PyTorch)
-    #   - ONNX runtime is CPU-optimized (no native CUDA support)
-    #   - GPU acceleration would require NVIDIA NIM (different architecture)
-    #   - Current setup: CPU-only with AVX2 optimization (functional but slower)
-    image: cr.weaviate.io/semitechnologies/transformers-inference:baai-bge-m3-onnx-latest
-    restart: on-failure:0
-    ports:
-      - "8090:8080"  # Expose vectorizer API for manual vectorization
-    environment:
-      # ONNX runtime - CPU only (CUDA not supported in ONNX version)
-      ENABLE_CUDA: "0"
-      # Increased timeouts for very long chunks (e.g., Peirce CP 3.403, CP 8.388, Menon chunk 10)
-      # Default is 60s, increased to 600s (10 minutes) for exceptionally large texts (e.g., CP 8.388: 218k chars)
-      WORKER_TIMEOUT: "600"
-    mem_limit: 10g
-    memswap_limit: 12g
-    cpus: 3
-    # Healthcheck ensures service is fully loaded before Weaviate starts
-    # BGE-M3 model takes ~60-120s to load into memory
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/.well-known/ready"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s  # BGE-M3 model loading can take up to 2 minutes
+  # NOTE: text2vec-transformers service REMOVED (Jan 2026)
+  # Vectorization now handled by Python GPU embedder (memory/core/embedding_service.py)
+  # Benefits: 30-70x faster ingestion, -10 GB RAM, unified architecture
+  # See MIGRATION_GPU_EMBEDDER_SUCCESS.md for details
 
 volumes:
   weaviate_data:
