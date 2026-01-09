@@ -1,5 +1,54 @@
 # Changelog - Library RAG Project
 
+## 2026-01-09 - GPU Embedder Migration Complete & Documentation Overhaul
+
+### GPU Embedder Migration (Complete)
+- **Full Python GPU embedder**: Migrated from Docker text2vec-transformers to unified Python GPU embedder
+- **30-70x faster ingestion**: GPU acceleration (RTX 4070, PyTorch CUDA, FP16)
+- **Simplified architecture**: Single embedder for both ingestion and queries
+- **Removed Docker service**: text2vec-transformers service removed, saves 10GB RAM
+- **Manual vectorization**: All chunks now pre-vectorized before Weaviate insertion
+- **Zero data loss**: All 5,355 existing chunks preserved during migration
+
+### Testing & Validation
+- **Chat RAG test**: Puppeteer test confirms hierarchical search (11 chunks, 5 sections)
+- **Memories test**: Backend API validated (104 thoughts, 380 messages, 12 conversations)
+- **Conversations test**: Search functionality working correctly
+- **Performance metrics**: ~17ms query vectorization, ~100-500ms Weaviate search
+
+### Documentation Reorganization
+- **Created `docs/` structure**: Organized migration docs into `docs/migration-gpu/`
+- **Moved 6 migration files**: BUG_REPORT, DIAGNOSTIC, MIGRATION_SUCCESS, TEST reports
+- **Moved project_progress.md**: Centralized in `docs/`
+- **Removed 15 obsolete files**: Cleaned up temporary session reports and outdated docs
+- **README.md rewrite**: Comprehensive documentation of dual RAG system
+  - 5 Weaviate collections explained (Work, Chunk_v2, Summary_v2, Thought, Conversation)
+  - Library Philosophique + Memory Ikario architecture
+  - Quick start guide, usage examples, troubleshooting
+  - Performance metrics and resource usage
+
+### Docker Configuration
+- **Simplified docker-compose.yml**: Removed text2vec-transformers service and modules
+- **Weaviate-only deployment**: Manual vectorization, no auto-vectorization modules needed
+- **Environment cleanup**: Removed `ENABLE_MODULES` and `DEFAULT_VECTORIZER_MODULE`
+
+### Database Stats (Current)
+- **Chunk_v2**: 5,355 chunks with 1024-dim vectors (GPU embedder)
+- **Summary_v2**: Hierarchical summaries with GPU vectors
+- **Work**: 18 philosophical works
+- **Thought**: 104 thoughts
+- **Conversation**: 12 conversations with 380 messages
+
+### Git Commits
+- feat: Complete GPU embedder migration for ingestion pipeline
+- test: Add Puppeteer tests for chat and memories
+- refactor: Remove Docker text2vec-transformers service
+- chore: Clean up temporary test files
+- docs: Reorganize documentation and rewrite README
+- docs: Remove obsolete documentation files
+
+---
+
 ## 2026-01-08 - Chunking Optimization & Vectorization
 
 ### Chunking Improvements
