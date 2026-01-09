@@ -190,9 +190,8 @@ class DeleteResult(TypedDict, total=False):
     Attributes:
         success: Whether deletion succeeded.
         error: Error message if deletion failed.
-        deleted_chunks: Number of chunks deleted from Chunk collection.
-        deleted_summaries: Number of summaries deleted from Summary collection.
-        deleted_document: Whether the Document object was deleted.
+        deleted_chunks: Number of chunks deleted from Chunk_v2 collection.
+        deleted_summaries: Number of summaries deleted from Summary_v2 collection.
 
     Example:
         >>> result = delete_document_chunks("platon_republique")
@@ -203,7 +202,6 @@ class DeleteResult(TypedDict, total=False):
     error: str
     deleted_chunks: int
     deleted_summaries: int
-    deleted_document: bool
 
 
 # =============================================================================
@@ -379,7 +377,8 @@ def validate_document_metadata(
         )
 
     # Validate title (required for work.title nested object)
-    title = metadata.get("title") or metadata.get("work")
+    # Priority: work > original_title > title (to avoid LLM prompt instructions)
+    title = metadata.get("work") or metadata.get("original_title") or metadata.get("title")
     if not title or not str(title).strip():
         raise ValueError(
             f"Invalid metadata for '{doc_name}': 'title' is missing or empty. "
@@ -388,7 +387,8 @@ def validate_document_metadata(
         )
 
     # Validate author (required for work.author nested object)
-    author = metadata.get("author")
+    # Priority: original_author > author (to avoid LLM prompt instructions)
+    author = metadata.get("original_author") or metadata.get("author")
     if not author or not str(author).strip():
         raise ValueError(
             f"Invalid metadata for '{doc_name}': 'author' is missing or empty. "
@@ -649,8 +649,10 @@ def create_or_get_work(
         logger.warning(f"Collection Work non trouvée: {e}")
         return None
 
-    title = metadata.get("title") or doc_name
-    author = metadata.get("author") or "Inconnu"
+    # Priority: work > original_title > title (to avoid LLM prompt instructions)
+    title = metadata.get("work") or metadata.get("original_title") or metadata.get("title") or doc_name
+    # Priority: original_author > author (to avoid LLM prompt instructions)
+    author = metadata.get("original_author") or metadata.get("author") or "Inconnu"
     year = metadata.get("year", 0) if metadata.get("year") else 0
 
     try:
@@ -683,76 +685,6 @@ def create_or_get_work(
 
     except Exception as e:
         logger.warning(f"Erreur création Work: {e}")
-        return None
-
-
-def ingest_document_metadata(
-    client: WeaviateClient,
-    doc_name: str,
-    metadata: Dict[str, Any],
-    toc: List[Dict[str, Any]],
-    hierarchy: Dict[str, Any],
-    chunks_count: int,
-    pages: int,
-) -> Optional[str]:
-    """Insert document metadata into the Document collection.
-
-    Creates a Document object containing metadata about a processed document,
-    including its table of contents, hierarchy structure, and statistics.
-
-    Args:
-        client: Active Weaviate client connection.
-        doc_name: Unique document identifier (sourceId).
-        metadata: Extracted metadata dict with keys: title, author, language.
-        toc: Table of contents as a hierarchical list of dicts.
-        hierarchy: Complete document hierarchy structure.
-        chunks_count: Total number of chunks in the document.
-        pages: Number of pages in the source PDF.
-
-    Returns:
-        UUID string of the created Document object, or None if insertion failed.
-
-    Example:
-        >>> with get_weaviate_client() as client:
-        ...     uuid = ingest_document_metadata(
-        ...         client,
-        ...         doc_name="platon_republique",
-        ...         metadata={"title": "La Republique", "author": "Platon"},
-        ...         toc=[{"title": "Livre I", "level": 1}],
-        ...         hierarchy={},
-        ...         chunks_count=150,
-        ...         pages=300,
-        ...     )
-
-    Note:
-        The TOC and hierarchy are serialized to JSON strings for storage.
-        The createdAt field is set to the current timestamp.
-    """
-    try:
-        doc_collection: Collection[Any, Any] = client.collections.get("Document")
-    except Exception as e:
-        logger.warning(f"Collection Document non trouvée: {e}")
-        return None
-
-    try:
-        doc_obj: Dict[str, Any] = {
-            "sourceId": doc_name,
-            "title": metadata.get("title") or doc_name,
-            "author": metadata.get("author") or "Inconnu",
-            "toc": json.dumps(toc, ensure_ascii=False) if toc else "[]",
-            "hierarchy": json.dumps(hierarchy, ensure_ascii=False) if hierarchy else "{}",
-            "pages": pages,
-            "chunksCount": chunks_count,
-            "language": metadata.get("language", "fr"),
-            "createdAt": datetime.now(timezone.utc).isoformat(),
-        }
-
-        result = doc_collection.data.insert(doc_obj)
-        logger.info(f"Document metadata ingéré: {doc_name}")
-        return str(result)
-
-    except Exception as e:
-        logger.warning(f"Erreur ingestion document metadata: {e}")
         return None
 
 
@@ -897,14 +829,13 @@ def ingest_document(
     toc: Optional[List[Dict[str, Any]]] = None,
     hierarchy: Optional[Dict[str, Any]] = None,
     pages: int = 0,
-    ingest_document_collection: bool = True,
     ingest_summary_collection: bool = False,
 ) -> IngestResult:
     """Ingest document chunks into Weaviate with nested objects.
 
-    Main ingestion function that inserts chunks into the Chunk collection
-    with nested Work and Document references. Optionally also creates
-    entries in the Document and Summary collections.
+    Main ingestion function that inserts chunks into the Chunk_v2 collection
+    with nested Work references. Optionally also creates entries in the
+    Summary_v2 collection.
 
     This function uses batch insertion for optimal performance and
     constructs proper nested objects for filtering capabilities.
@@ -922,12 +853,10 @@ def ingest_document(
             - author: Author name
             - edition (optional): Edition identifier
         language: ISO language code. Defaults to "fr".
-        toc: Optional table of contents for Document/Summary collections.
+        toc: Optional table of contents for Summary collection.
         hierarchy: Optional complete document hierarchy structure.
         pages: Number of pages in source document. Defaults to 0.
-        ingest_document_collection: If True, also insert into Document
-            collection. Defaults to True.
-        ingest_summary_collection: If True, also insert into Summary
+        ingest_summary_collection: If True, also insert into Summary_v2
             collection (requires toc). Defaults to False.
 
     Returns:
@@ -937,7 +866,7 @@ def ingest_document(
             - inserted: Preview of first 10 inserted chunks
             - work: Work title
             - author: Author name
-            - document_uuid: UUID of Document object (if created)
+            - work_uuid: UUID of Work object (if created)
             - all_objects: Complete list of inserted ChunkObjects
             - error: Error message (if failed)
 
@@ -995,14 +924,6 @@ def ingest_document(
                 client, doc_name, metadata, pages
             )
 
-            # Insérer les métadonnées du document (optionnel)
-            doc_uuid: Optional[str] = None
-            if ingest_document_collection:
-                doc_uuid = ingest_document_metadata(
-                    client, doc_name, metadata, toc or [], hierarchy or {},
-                    len(chunks), pages
-                )
-
             # Insérer les résumés (optionnel)
             if ingest_summary_collection and toc:
                 ingest_summaries(client, doc_name, toc, {})
@@ -1018,8 +939,10 @@ def ingest_document(
             objects_to_insert: List[ChunkObject] = []
 
             # Extraire et valider les métadonnées (validation déjà faite, juste extraction)
-            title: str = metadata.get("title") or metadata.get("work") or doc_name
-            author: str = metadata.get("author") or "Inconnu"
+            # Priority: work > original_title > title (to avoid LLM prompt instructions)
+            title: str = metadata.get("work") or metadata.get("original_title") or metadata.get("title") or doc_name
+            # Priority: original_author > author (to avoid LLM prompt instructions)
+            author: str = metadata.get("original_author") or metadata.get("author") or "Inconnu"
             edition: str = metadata.get("edition", "")
 
             for idx, chunk in enumerate(chunks):
@@ -1153,7 +1076,7 @@ def ingest_document(
                 inserted=inserted_summary,
                 work=title,
                 author=author,
-                document_uuid=doc_uuid,
+                work_uuid=work_uuid,
                 all_objects=objects_to_insert,
             )
 
@@ -1169,9 +1092,8 @@ def ingest_document(
 def delete_document_chunks(doc_name: str) -> DeleteResult:
     """Delete all data for a document from Weaviate collections.
 
-    Removes chunks, summaries, and the document metadata from their
-    respective collections. Uses nested object filtering to find
-    related objects.
+    Removes chunks and summaries from their respective collections.
+    Uses nested object filtering to find related objects.
 
     This function is useful for re-processing a document after changes
     to the processing pipeline or to clean up test data.
@@ -1184,7 +1106,6 @@ def delete_document_chunks(doc_name: str) -> DeleteResult:
             - success: True if deletion succeeded (even if no objects found)
             - deleted_chunks: Number of Chunk objects deleted
             - deleted_summaries: Number of Summary objects deleted
-            - deleted_document: True if Document object was deleted
             - error: Error message (if failed)
 
     Example:
@@ -1227,23 +1148,12 @@ def delete_document_chunks(doc_name: str) -> DeleteResult:
             except Exception as e:
                 logger.warning(f"Erreur suppression summaries: {e}")
 
-            # Supprimer le document
-            try:
-                doc_collection: Collection[Any, Any] = client.collections.get("Document")
-                result = doc_collection.data.delete_many(
-                    where=wvq.Filter.by_property("sourceId").equal(doc_name)
-                )
-                deleted_document = result.successful > 0
-            except Exception as e:
-                logger.warning(f"Erreur suppression document: {e}")
-
             logger.info(f"Suppression: {deleted_chunks} chunks, {deleted_summaries} summaries pour {doc_name}")
 
             return DeleteResult(
                 success=True,
                 deleted_chunks=deleted_chunks,
                 deleted_summaries=deleted_summaries,
-                deleted_document=deleted_document,
             )
 
     except Exception as e:

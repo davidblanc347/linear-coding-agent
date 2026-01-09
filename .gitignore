@@ -45,4 +45,4 @@ vectorize_remaining.py
 migrate_chunk_*.py
 
 # Archives (migration scripts moved here)
-archive/
+archive/chunk_v2_backup.json

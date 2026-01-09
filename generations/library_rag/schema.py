@@ -5,13 +5,12 @@ Library RAG application. It provides functions to create, verify, and display
 the schema configuration for indexing and searching philosophical texts.
 
 Schema Architecture:
-    The schema follows a normalized design with denormalized nested objects
-    for efficient querying. The hierarchy is::
+    The schema follows a denormalized design with nested objects for efficient
+    querying. The hierarchy is::
 
         Work (metadata only)
-          └── Document (edition/translation instance)
-                ├── Chunk (vectorized text fragments)
-                └── Summary (vectorized chapter summaries)
+          ├── Chunk_v2 (vectorized text fragments)
+          └── Summary_v2 (vectorized chapter summaries)
 
 Collections:
     **Work** (no vectorization):
@@ -19,27 +18,24 @@ Collections:
         Stores canonical metadata: title, author, year, language, genre.
         Not vectorized - used only for metadata and relationships.
 
-    **Document** (no vectorization):
-        Represents a specific edition or translation of a Work.
-        Contains: sourceId, edition, language, pages, TOC, hierarchy.
+    **Chunk_v2** (manual GPU vectorization):
+        Text fragments optimized for semantic search (200-800 chars).
+        Vectorized with Python GPU embedder (BAAI/bge-m3, 1024-dim).
+        Vectorized fields: text, keywords.
+        Non-vectorized fields: workTitle, workAuthor, sectionPath, chapterTitle, unitType, orderIndex.
         Includes nested Work reference for denormalized access.
 
-    **Chunk** (vectorized with text2vec-transformers):
-        Text fragments optimized for semantic search (200-800 chars).
-        Vectorized fields: text, summary, keywords.
-        Non-vectorized fields: sectionPath, chapterTitle, unitType, orderIndex.
-        Includes nested Document and Work references.
-
-    **Summary** (vectorized with text2vec-transformers):
+    **Summary_v2** (manual GPU vectorization):
         LLM-generated chapter/section summaries for high-level search.
+        Vectorized with Python GPU embedder (BAAI/bge-m3, 1024-dim).
         Vectorized fields: text, concepts.
-        Includes nested Document reference.
+        Includes nested Work reference for denormalized access.
 
 Vectorization Strategy:
-    - Only Chunk.text, Chunk.summary, Chunk.keywords, Summary.text, and Summary.concepts are vectorized
-    - Uses text2vec-transformers (BAAI/bge-m3 with 1024-dim via Docker)
+    - Only Chunk_v2.text, Chunk_v2.keywords, Summary_v2.text, and Summary_v2.concepts are vectorized
+    - Manual vectorization with Python GPU embedder (BAAI/bge-m3, 1024-dim, RTX 4070)
     - Metadata fields use skip_vectorization=True for filtering only
-    - Work and Document collections have no vectorizer (metadata only)
+    - Work collection has no vectorizer (metadata only)
 
 Vector Index Configuration (2026-01):
     - **HNSW Index**: Hierarchical Navigable Small World for efficient search
@@ -58,12 +54,10 @@ Migration Note (2024-12):
 Nested Objects:
     Instead of using Weaviate cross-references, we use nested objects for
     denormalized data access. This allows single-query retrieval of chunk
-    data with its Work/Document metadata without joins::
+    data with its Work metadata without joins::
 
-        Chunk.work = {title, author}
-        Chunk.document = {sourceId, edition}
-        Document.work = {title, author}
-        Summary.document = {sourceId}
+        Chunk_v2.work = {title, author}
+        Summary_v2.work = {title, author}
 
 Usage:
     From command line::
@@ -151,74 +145,6 @@ def create_work_collection(client: weaviate.WeaviateClient) -> None:
                 name="genre",
                 description="Genre or type (e.g., 'dialogue', 'treatise', 'commentary').",
                 data_type=wvc.DataType.TEXT,
-            ),
-        ],
-    )
-
-
-def create_document_collection(client: weaviate.WeaviateClient) -> None:
-    """Create the Document collection for edition/translation instances.
-
-    Args:
-        client: Connected Weaviate client.
-
-    Note:
-        Contains nested Work reference for denormalized access.
-    """
-    client.collections.create(
-        name="Document",
-        description="A specific edition or translation of a work (PDF, ebook, etc.).",
-        vectorizer_config=wvc.Configure.Vectorizer.none(),
-        properties=[
-            wvc.Property(
-                name="sourceId",
-                description="Unique identifier for this document (filename without extension).",
-                data_type=wvc.DataType.TEXT,
-            ),
-            wvc.Property(
-                name="edition",
-                description="Edition or translator (e.g., 'trad. Cousin', 'Loeb Classical Library').",
-                data_type=wvc.DataType.TEXT,
-            ),
-            wvc.Property(
-                name="language",
-                description="Language of this edition (e.g., 'fr', 'en').",
-                data_type=wvc.DataType.TEXT,
-            ),
-            wvc.Property(
-                name="pages",
-                description="Number of pages in the PDF/document.",
-                data_type=wvc.DataType.INT,
-            ),
-            wvc.Property(
-                name="chunksCount",
-                description="Total number of chunks extracted from this document.",
-                data_type=wvc.DataType.INT,
-            ),
-            wvc.Property(
-                name="toc",
-                description="Table of contents as JSON string [{title, level, page}, ...].",
-                data_type=wvc.DataType.TEXT,
-            ),
-            wvc.Property(
-                name="hierarchy",
-                description="Full hierarchical structure as JSON string.",
-                data_type=wvc.DataType.TEXT,
-            ),
-            wvc.Property(
-                name="createdAt",
-                description="Timestamp when this document was ingested.",
-                data_type=wvc.DataType.DATE,
-            ),
-            # Nested Work reference
-            wvc.Property(
-                name="work",
-                description="Reference to the Work this document is an instance of.",
-                data_type=wvc.DataType.OBJECT,
-                nested_properties=[
-                    wvc.Property(name="title", data_type=wvc.DataType.TEXT),
-                    wvc.Property(name="author", data_type=wvc.DataType.TEXT),
-                ],
             ),
         ],
     )
@@ -410,7 +336,7 @@ def create_summary_collection(client: weaviate.WeaviateClient) -> None:
 def create_schema(client: weaviate.WeaviateClient, delete_existing: bool = True) -> None:
     """Create the complete Weaviate schema for Library RAG.
 
-    Creates all four collections: Work, Document, Chunk, Summary.
+    Creates all three collections: Work, Chunk, Summary.
 
     Args:
         client: Connected Weaviate client.
@@ -429,16 +355,13 @@ def create_schema(client: weaviate.WeaviateClient, delete_existing: bool = True)
     print("      → Work (métadonnées œuvre)...")
     create_work_collection(client)
 
-    print("      → Document (métadonnées édition)...")
-    create_document_collection(client)
-
     print("      → Chunk (fragments vectorisés)...")
     create_chunk_collection(client)
 
     print("      → Summary (résumés de chapitres)...")
     create_summary_collection(client)
 
-    print("      ✓ 4 collections créées")
+    print("      ✓ 3 collections créées")
 
 
 def verify_schema(client: weaviate.WeaviateClient) -> bool:
@@ -453,7 +376,7 @@ def verify_schema(client: weaviate.WeaviateClient) -> bool:
     print("\n[3/4] Vérification des collections...")
     collections = client.collections.list_all()
 
-    expected: Set[str] = {"Work", "Document", "Chunk", "Summary"}
+    expected: Set[str] = {"Work", "Chunk", "Summary"}
     actual: Set[str] = set(collections.keys())
 
     if expected == actual:
@@ -480,7 +403,7 @@ def display_schema(client: weaviate.WeaviateClient) -> None:
 
     collections = client.collections.list_all()
 
-    for name in ["Work", "Document", "Chunk", "Summary"]:
+    for name in ["Work", "Chunk", "Summary"]:
         if name not in collections:
             continue
 
@@ -523,14 +446,12 @@ def print_summary() -> None:
     print("=" * 80)
     print("\n✓ Architecture:")
     print("  - Work: Source unique pour author/title")
-    print("  - Document: Métadonnées d'édition avec référence vers Work")
-    print("  - Chunk: Fragments vectorisés (text + summary + keywords)")
+    print("  - Chunk: Fragments vectorisés (text + keywords)")
     print("  - Summary: Résumés de chapitres vectorisés (text + concepts)")
     print("\n✓ Vectorisation:")
     print("  - Work:    NONE")
-    print("  - Document: NONE")
-    print("  - Chunk:   text2vec (text + summary + keywords)")
-    print("  - Summary: text2vec (text + concepts)")
+    print("  - Chunk:   GPU embedder (BAAI/bge-m3, 1024-dim)")
+    print("  - Summary: GPU embedder (BAAI/bge-m3, 1024-dim)")
     print("\n✓ Index Vectoriel (Optimisation 2026):")
     print("  - Chunk:   HNSW + RQ (~75% moins de RAM)")
     print("  - Summary: HNSW + RQ")

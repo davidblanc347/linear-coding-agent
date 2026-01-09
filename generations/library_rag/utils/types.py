@@ -848,7 +848,7 @@ class WeaviateIngestResult(TypedDict, total=False):
         inserted: List of inserted chunk summaries (first 10).
         work: Title of the ingested work.
         author: Author of the ingested work.
-        document_uuid: UUID of created Document object (if any).
+        work_uuid: UUID of created Work object (if any).
         all_objects: Complete list of all inserted ChunkObjects.
 
     Note:
@@ -863,7 +863,7 @@ class WeaviateIngestResult(TypedDict, total=False):
     inserted: List[Any]  # List[InsertedChunkSummary] from weaviate_ingest
     work: str
     author: str
-    document_uuid: Optional[str]
+    work_uuid: Optional[str]
     all_objects: List[Any]  # List[ChunkObject] from weaviate_ingest
 
 

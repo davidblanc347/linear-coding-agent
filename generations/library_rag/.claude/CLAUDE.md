@@ -138,34 +138,30 @@ The core of the application is `utils/pdf_pipeline.py`, which orchestrates a 10-
 - `use_ocr_annotations=True` - OCR with annotations (3x cost, better TOC)
 - `ingest_to_weaviate=True` - Insert chunks into Weaviate
 
-### Weaviate Schema (4 Collections)
+### Weaviate Schema (3 Collections)
 
-Defined in `schema.py`, the database uses a normalized design with denormalized nested objects:
+Defined in `schema.py`, the database uses a denormalized design with nested objects:
 
 ```
 Work (no vectorizer)
   title, author, year, language, genre
-
-  ├─► Document (no vectorizer)
-  │     sourceId, edition, pages, toc, hierarchy
+  │
+  ├─► Chunk_v2 (manual GPU vectorization) ⭐ PRIMARY
+  │     text (VECTORIZED)
+  │     keywords (VECTORIZED)
+  │     workTitle, workAuthor, sectionPath, chapterTitle, unitType, orderIndex
   │     work: {title, author} (nested)
   │
-  │   ├─► Chunk (text2vec-transformers) ⭐ PRIMARY
-  │   │     text (VECTORIZED)
-  │   │     keywords (VECTORIZED)
-  │   │     sectionPath, chapterTitle, unitType, orderIndex
-  │   │     work: {title, author} (nested)
-  │   │     document: {sourceId, edition} (nested)
-  │   │
-  │   └─► Summary (text2vec-transformers)
-  │         text (VECTORIZED)
-  │         concepts (VECTORIZED)
-  │         sectionPath, title, level, chunksCount
-  │         document: {sourceId} (nested)
+  └─► Summary_v2 (manual GPU vectorization)
+        text (VECTORIZED)
+        concepts (VECTORIZED)
+        sectionPath, title, level, chunksCount
+        work: {title, author} (nested)
 ```
 
 **Vectorization Strategy:**
-- Only `Chunk.text`, `Chunk.keywords`, `Summary.text`, `Summary.concepts` are vectorized
+- Only `Chunk_v2.text`, `Chunk_v2.keywords`, `Summary_v2.text`, `Summary_v2.concepts` are vectorized
+- Manual vectorization with Python GPU embedder (BAAI/bge-m3, 1024-dim, RTX 4070)
 - Metadata fields use `skip_vectorization=True` for filtering performance
 - Nested objects avoid joins for efficient single-query retrieval
 - BAAI/bge-m3 model: 1024 dimensions, 8192 token context
