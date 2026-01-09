@@ -70,6 +70,17 @@ import weaviate
 from weaviate import WeaviateClient
 from weaviate.collections import Collection
 import weaviate.classes.query as wvq
+import weaviate.classes.data as wvd
+
+# GPU embedder for manual vectorization
+import sys
+from pathlib import Path
+import numpy as np
+
+# Add project root to path for memory module access
+# From generations/library_rag/utils/ -> need 4 parents to reach root
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+from memory.core import get_embedder, GPUEmbeddingService
 
 # Import type definitions from central types module
 from utils.types import WeaviateIngestResult as IngestResult
@@ -193,6 +204,59 @@ class DeleteResult(TypedDict, total=False):
     deleted_chunks: int
     deleted_summaries: int
     deleted_document: bool
+
+
+# =============================================================================
+# GPU Vectorization Functions
+# =============================================================================
+
+
+def vectorize_chunks_batch(
+    chunks: List[ChunkObject],
+    embedder: GPUEmbeddingService,
+) -> np.ndarray:
+    """Generate vectors for chunks using GPU embedder.
+
+    Uses BAAI/bge-m3 model (1024 dimensions) on GPU to pre-compute vectors
+    for batch insertion. This replaces Weaviate's auto-vectorization for
+    10-20x faster ingestion performance.
+
+    Args:
+        chunks: List of ChunkObject dicts, each containing 'text' field
+        embedder: GPU embedding service instance from memory.core
+
+    Returns:
+        numpy array of shape (len(chunks), 1024) with embedding vectors
+
+    Example:
+        >>> from memory.core import get_embedder
+        >>> embedder = get_embedder()
+        >>> chunks = [{"text": "Test 1"}, {"text": "Test 2"}]
+        >>> vectors = vectorize_chunks_batch(chunks, embedder)
+        >>> vectors.shape
+        (2, 1024)
+
+    Note:
+        Empty or whitespace-only texts will still generate vectors (zero
+        vectors), but such chunks should be filtered before calling this
+        function to avoid wasting GPU compute.
+    """
+    # Extract texts for vectorization
+    texts = [chunk.get("text", "") for chunk in chunks]
+
+    # Generate vectors in optimal batches (48 for RTX 4070)
+    vectors = embedder.embed_batch(
+        texts,
+        batch_size=embedder.optimal_batch_size,
+        show_progress=False,
+    )
+
+    return vectors  # Returns np.ndarray shape (len(texts), 1024)
+
+
+# =============================================================================
+# Batch Size Calculation Functions
+# =============================================================================
 
 
 def calculate_batch_size(objects: List[ChunkObject], sample_size: int = 10) -> int:
@@ -763,6 +827,23 @@ def ingest_summaries(
     if not summaries_to_insert:
         return 0
 
+    # =================================================================
+    # GPU Vectorization for Summaries (Manual Pre-Computation)
+    # =================================================================
+    # Initialize GPU embedder
+    logger.info("Initializing GPU embedder for summary vectorization...")
+    embedder = get_embedder()
+
+    # Pre-vectorize all summaries
+    logger.info(f"Generating vectors for {len(summaries_to_insert)} summaries...")
+    summary_texts = [s.get("text", "") for s in summaries_to_insert]
+    summary_vectors = embedder.embed_batch(
+        summary_texts,
+        batch_size=embedder.optimal_batch_size,
+        show_progress=False,
+    )
+    logger.info(f"Summary vectorization complete: {summary_vectors.shape[0]} vectors")
+
     # Calculer dynamiquement la taille de batch optimale pour summaries
     batch_size: int = calculate_batch_size_summaries(summaries_to_insert)
     total_inserted = 0
@@ -775,12 +856,26 @@ def ingest_summaries(
             f"(avg summary length: {avg_len:,} chars)..."
         )
 
+        # =================================================================
+        # Batch Insertion with Manual Vectors
+        # =================================================================
         for batch_start in range(0, len(summaries_to_insert), batch_size):
             batch_end = min(batch_start + batch_size, len(summaries_to_insert))
             batch = summaries_to_insert[batch_start:batch_end]
+            batch_vectors = summary_vectors[batch_start:batch_end]
+
+            # Create DataObject list with manual vectors
+            data_objects = []
+            for i, summary in enumerate(batch):
+                data_objects.append(
+                    wvd.DataObject(
+                        properties=summary,
+                        vector=batch_vectors[i].tolist(),  # Convert numpy array to list
+                    )
+                )
 
             try:
-                summary_collection.data.insert_many(batch)
+                summary_collection.data.insert_many(objects=data_objects)
                 total_inserted += len(batch)
                 logger.info(f"  Batch {batch_start//batch_size + 1}: Inserted {len(batch)} summaries ({total_inserted}/{len(summaries_to_insert)})")
             except Exception as batch_error:
@@ -985,6 +1080,19 @@ def ingest_document(
                     count=0,
                 )
 
+            # =================================================================
+            # GPU Vectorization (Manual Pre-Computation)
+            # =================================================================
+            # Initialize GPU embedder for manual vectorization
+            logger.info("Initializing GPU embedder for manual vectorization...")
+            embedder = get_embedder()
+            logger.info(f"GPU embedder ready (model: {embedder.model_name}, batch_size: {embedder.optimal_batch_size})")
+
+            # Pre-vectorize ALL chunks before insertion (10-20x faster than Docker text2vec)
+            logger.info(f"Generating vectors for {len(objects_to_insert)} chunks...")
+            all_vectors = vectorize_chunks_batch(objects_to_insert, embedder)
+            logger.info(f"Vectorization complete: {all_vectors.shape[0]} vectors of {all_vectors.shape[1]} dimensions")
+
             # Calculer dynamiquement la taille de batch optimale
             batch_size: int = calculate_batch_size(objects_to_insert)
             total_inserted = 0
@@ -996,12 +1104,26 @@ def ingest_document(
                 f"(avg chunk length: {avg_len:,} chars)..."
             )
 
+            # =================================================================
+            # Batch Insertion with Manual Vectors
+            # =================================================================
             for batch_start in range(0, len(objects_to_insert), batch_size):
                 batch_end = min(batch_start + batch_size, len(objects_to_insert))
                 batch = objects_to_insert[batch_start:batch_end]
+                batch_vectors = all_vectors[batch_start:batch_end]
+
+                # Create DataObject list with manual vectors
+                data_objects = []
+                for i, chunk in enumerate(batch):
+                    data_objects.append(
+                        wvd.DataObject(
+                            properties=chunk,
+                            vector=batch_vectors[i].tolist(),  # Convert numpy array to list
+                        )
+                    )
 
                 try:
-                    _response = chunk_collection.data.insert_many(objects=batch)
+                    _response = chunk_collection.data.insert_many(objects=data_objects)
                     total_inserted += len(batch)
                     logger.info(f"  Batch {batch_start//batch_size + 1}: Inserted {len(batch)} chunks ({total_inserted}/{len(objects_to_insert)})")
                 except Exception as batch_error:

@@ -7,13 +7,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Library RAG** is a production-grade RAG system specialized in indexing and semantic search of philosophical and academic texts. It provides a complete pipeline from PDF upload through OCR, intelligent LLM-based extraction, to vectorized search in Weaviate.
 
 **Core Architecture:**
-- **Vector Database**: Weaviate 1.34.4 with text2vec-transformers (BAAI/bge-m3, 1024-dim)
+- **Vector Database**: Weaviate 1.34.4 with manual GPU vectorization (BAAI/bge-m3, 1024-dim)
+- **Embeddings**: Python GPU embedder (PyTorch CUDA, RTX 4070, FP16) for both ingestion and queries
 - **OCR**: Mistral OCR API (~0.003€/page)
 - **LLM**: Ollama (local, free) or Mistral API (fast, paid)
 - **Web Interface**: Flask 3.0 with Server-Sent Events for real-time progress
-- **Infrastructure**: Docker Compose (Weaviate + transformers with GPU support)
+- **Infrastructure**: Docker Compose (Weaviate only, text2vec-transformers optional)
 
-**Migration Note (Dec 2024):** Migrated from MiniLM-L6 (384-dim) to BGE-M3 (1024-dim) for superior multilingual support (Greek, Latin, French, English) and 8192 token context window.
+**Migration Notes:**
+- **Jan 2026**: Migrated from Docker text2vec-transformers to Python GPU embedder for 10-20x faster ingestion
+- **Dec 2024**: Migrated from MiniLM-L6 (384-dim) to BGE-M3 (1024-dim) for superior multilingual support
 
 ## Common Commands
 

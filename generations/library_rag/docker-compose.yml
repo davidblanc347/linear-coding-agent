@@ -46,6 +46,16 @@ services:
     mem_limit: 8g
     memswap_limit: 10g
     cpus: 4
+    # Ensure Weaviate waits for text2vec-transformers to be healthy before starting
+    depends_on:
+      text2vec-transformers:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   text2vec-transformers:
     # BAAI/bge-m3: Multilingual embedding model (1024 dimensions)
@@ -71,6 +81,14 @@ services:
     mem_limit: 10g
     memswap_limit: 12g
     cpus: 3
+    # Healthcheck ensures service is fully loaded before Weaviate starts
+    # BGE-M3 model takes ~60-120s to load into memory
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/.well-known/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s  # BGE-M3 model loading can take up to 2 minutes
 
 volumes:
   weaviate_data:
