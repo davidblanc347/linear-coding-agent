@@ -36,7 +36,7 @@ Ouvrez ensuite http://localhost:5000 dans votre navigateur.
 - [Pipeline de Traitement PDF](#-pipeline-de-traitement-pdf-10-étapes)
 - [Configuration](#%EF%B8%8F-configuration)
 - [Interface Flask](#-interface-flask)
-- [Schéma Weaviate](#-schéma-weaviate-4-collections)
+- [Schéma Weaviate](#-schéma-weaviate-6-collections)
 - [Exemples de Requêtes](#-exemples-de-requêtes)
 - [MCP Server (Claude Desktop)](#-mcp-server-claude-desktop)
 - [Gestion des Coûts](#-gestion-des-coûts)
@@ -52,19 +52,23 @@ Ouvrez ensuite http://localhost:5000 dans votre navigateur.
 ```mermaid
 flowchart TB
     subgraph Docker["🐳 Docker Compose"]
-        subgraph Weaviate["Weaviate 1.34.4"]
+        subgraph Weaviate["Weaviate 1.34.4 - 6 Collections"]
             direction TB
-            Work["📚 Work<br/><i>no vectorizer</i>"]
-            Document["📄 Document<br/><i>no vectorizer</i>"]
-            Chunk["📝 Chunk<br/><i>text2vec-transformers</i>"]
-            Summary["📋 Summary<br/><i>text2vec-transformers</i>"]
+            subgraph RAG["📚 RAG Collections (3)"]
+                Work["Work<br/><i>no vectorizer</i>"]
+                Chunk["Chunk_v2<br/><i>GPU embedder</i>"]
+                Summary["Summary_v2<br/><i>GPU embedder</i>"]
+                Work --> Chunk
+                Work --> Summary
+            end
 
-            Work --> Document
-            Document --> Chunk
-            Document --> Summary
+            subgraph Memory["🧠 Memory Collections (3)"]
+                Conv["Conversation<br/><i>GPU embedder</i>"]
+                Msg["Message<br/><i>GPU embedder</i>"]
+                Thought["Thought<br/><i>GPU embedder</i>"]
+                Conv --> Msg
+            end
         end
-
-        Transformers["🤖 Transformers API<br/>BAAI/bge-m3 (1024-dim)"]
     end
 
     subgraph Flask["🌐 Flask App"]
@@ -74,19 +78,23 @@ flowchart TB
         Web["🎨 Interface Web<br/>SSE Progress"]
     end
 
+    GPUEmbed["⚡ GPU Embedder<br/>BAAI/bge-m3 (RTX 4070)"]
     Client["🐍 Python Client"]
 
     Client -->|"REST :8080<br/>gRPC :50051"| Weaviate
-    Chunk -.->|vectorization| Transformers
-    Summary -.->|vectorization| Transformers
+    Chunk -.->|manual vectors| GPUEmbed
+    Summary -.->|manual vectors| GPUEmbed
+    Conv -.->|manual vectors| GPUEmbed
+    Msg -.->|manual vectors| GPUEmbed
+    Thought -.->|manual vectors| GPUEmbed
     Parser --> OCR
     Parser --> LLM
     Parser --> Client
 ```
 
 **Composants Clés:**
-- **Weaviate 1.34.4**: Base vectorielle avec 4 collections (Work, Document, Chunk, Summary)
-- **BAAI/bge-m3**: Modèle d'embedding multilingue (1024 dimensions, 8192 token context)
+- **Weaviate 1.34.4**: Base vectorielle avec 6 collections (3 RAG + 3 Memory)
+- **GPU Embedder**: Python BAAI/bge-m3 (1024-dim, RTX 4070, PyTorch CUDA)
 - **Mistral OCR**: Extraction texte/images (~0.003€/page)
 - **LLM**: Ollama (local, gratuit) ou Mistral API (rapide, payant)
 - **Flask 3.0**: Interface web avec Server-Sent Events (SSE)
@@ -109,7 +117,7 @@ flowchart TD
     Step7 --> Step8["[8] Cleaner<br/>Nettoyage OCR"]
     Step8 --> Step9["[9] LLM Validator<br/>Validation + concepts"]
     Step9 --> Step10["[10] Weaviate Ingest<br/>Vectorisation"]
-    Step10 --> DB[("🗄️ Weaviate<br/>4 Collections")]
+    Step10 --> DB[("🗄️ Weaviate<br/>6 Collections")]
 ```
 
 ### Détails du Pipeline
@@ -174,55 +182,92 @@ Lors de l'upload d'un PDF, vous pouvez configurer :
 
 ---
 
-## 📊 Schéma Weaviate (4 Collections)
+## 📊 Schéma Weaviate (6 Collections)
 
-### Architecture Simplifiée
+Le système utilise **6 collections Weaviate** organisées en **2 ensembles distincts et indépendants** :
+
+**🎯 Séparation des préoccupations:**
+- **Collections RAG** (`schema.py`) : Dédiées à l'indexation et recherche de textes philosophiques
+- **Collections Memory** (`memory/schemas/memory_schemas.py`) : Dédiées au système de mémoire conversationnelle
+
+Les deux ensembles partagent la même instance Weaviate et le même GPU embedder (BAAI/bge-m3) mais sont gérés via des modules séparés.
+
+### 📚 Collections RAG (3) - Textes Philosophiques
 
 ```
 Work (no vectorizer)
   ├─ title, author, year, language, genre
   │
-  └─► Document (no vectorizer)
-        ├─ sourceId, edition, language, pages, chunksCount
-        ├─ toc (JSON), hierarchy (JSON), createdAt
-        ├─ work: {title, author} (nested)
-        │
-        ├─► Chunk (VECTORIZED ⭐)
-        │     ├─ text (vectorized), summary (vectorized), keywords (vectorized)
-        │     ├─ sectionPath, chapterTitle, unitType, orderIndex, language
-        │     ├─ work: {title, author} (nested)
-        │     └─ document: {sourceId, edition} (nested)
-        │
-        └─► Summary (VECTORIZED ⭐)
-              ├─ text (vectorized), concepts (vectorized)
-              ├─ sectionPath, title, level, chunksCount
-              └─ document: {sourceId} (nested)
+  ├─► Chunk_v2 (VECTORIZED ⭐ - GPU embedder)
+  │     ├─ text (vectorized), keywords (vectorized)
+  │     ├─ workTitle, workAuthor, sectionPath, chapterTitle
+  │     ├─ unitType, orderIndex, language, year
+  │     └─ work: {title, author} (nested)
+  │
+  └─► Summary_v2 (VECTORIZED ⭐ - GPU embedder)
+        ├─ text (vectorized), concepts (vectorized)
+        ├─ sectionPath, title, level, chunksCount
+        └─ work: {title, author} (nested)
 ```
 
-### Collections
+### 🧠 Collections Memory (3) - Système de Mémoire
+
+```
+Conversation (VECTORIZED - GPU embedder)
+  ├─ conversation_id, title, category
+  ├─ summary (vectorized), tags
+  └─ timestamp, message_count
+
+Message (VECTORIZED - GPU embedder)
+  ├─ content (vectorized)
+  ├─ role (user/assistant/system)
+  ├─ conversation_id, order_index
+  └─ timestamp
+
+Thought (VECTORIZED - GPU embedder)
+  ├─ content (vectorized), concepts (vectorized)
+  ├─ thought_type, trigger, emotional_state
+  └─ timestamp, privacy_level
+```
+
+### Détails des Collections RAG
 
 **Work** (no vectorizer)
 - Représente une œuvre philosophique (ex: Ménon de Platon)
 - Propriétés : `title`, `author`, `originalTitle`, `year`, `language`, `genre`
 - Pas de vectorisation (métadonnées uniquement)
+- **Rôle** : Source unique de vérité pour les métadonnées des œuvres
 
-**Document** (no vectorizer)
-- Représente une édition spécifique d'une œuvre (PDF, traduction)
-- Propriétés : `sourceId`, `edition`, `language`, `pages`, `chunksCount`, `toc`, `hierarchy`, `createdAt`
-- Référence nested : `work: {title, author}`
-- Pas de vectorisation (métadonnées uniquement)
-
-**Chunk ⭐** (text2vec-transformers)
+**Chunk_v2 ⭐** (GPU embedder - BAAI/bge-m3, 1024-dim)
 - Fragment de texte optimisé pour la recherche sémantique (200-800 caractères)
-- Propriétés vectorisées : `text`, `summary` (résumé LLM du chunk), `keywords`
-- Propriétés non-vectorisées : `sectionPath`, `chapterTitle`, `unitType`, `orderIndex`, `language`
-- Références nested : `work: {title, author}`, `document: {sourceId, edition}`
+- Propriétés vectorisées : `text`, `keywords`
+- Propriétés non-vectorisées : `workTitle`, `workAuthor`, `sectionPath`, `chapterTitle`, `unitType`, `orderIndex`, `language`, `year`
+- Référence nested : `work: {title, author}`
+- **Vectorisation** : Manuelle avec Python GPU embedder (RTX 4070, PyTorch CUDA)
 
-**Summary** (text2vec-transformers)
+**Summary_v2 ⭐** (GPU embedder - BAAI/bge-m3, 1024-dim)
 - Résumés LLM de chapitres/sections pour recherche de haut niveau
 - Propriétés vectorisées : `text`, `concepts`
 - Propriétés non-vectorisées : `sectionPath`, `title`, `level`, `chunksCount`
-- Référence nested : `document: {sourceId}`
+- Référence nested : `work: {title, author}`
+- **Vectorisation** : Manuelle avec Python GPU embedder
+
+### Détails des Collections Memory
+
+**Conversation** (GPU embedder)
+- Conversations complètes avec Claude Desktop
+- Propriétés : `conversation_id`, `title`, `category`, `summary` (vectorized), `tags`, `timestamp`, `message_count`
+- **Usage** : Recherche sémantique dans l'historique de conversations
+
+**Message** (GPU embedder)
+- Messages individuels dans les conversations
+- Propriétés : `content` (vectorized), `role`, `conversation_id`, `order_index`, `timestamp`
+- **Usage** : Recherche sémantique dans les messages spécifiques
+
+**Thought** (GPU embedder)
+- Pensées/réflexions individuelles
+- Propriétés : `content` (vectorized), `concepts` (vectorized), `thought_type`, `trigger`, `emotional_state`, `timestamp`, `privacy_level`
+- **Usage** : Système de mémoire pour insights et réflexions
 
 ### Design Patterns
 
@@ -295,7 +340,7 @@ import weaviate.classes.query as wvq
 client = weaviate.connect_to_local()
 
 try:
-    chunks = client.collections.get("Chunk")
+    chunks = client.collections.get("Chunk_v2")
 
     # Recherche sémantique simple
     result = chunks.query.near_text(
@@ -765,7 +810,7 @@ library_rag/
 ├── mypy.ini                    # Configuration mypy (strict mode)
 ├── pytest.ini                  # Configuration pytest
 │
-├── schema.py                   # ⚙️ Définition schéma Weaviate (4 collections)
+├── schema.py                   # ⚙️ Définition schéma Weaviate RAG (3 collections: Work, Chunk_v2, Summary_v2)
 ├── flask_app.py                # 🌐 Application Flask principale (38 Ko)
 ├── mcp_server.py               # 🤖 MCP server pour Claude Desktop
 ├── query_test.py               # 🔍 Exemples de requêtes sémantiques
@@ -796,9 +841,20 @@ library_rag/
 │   ├── toc_extractor_markdown.py
 │   └── toc_extractor_visual.py
 │
-├── mcp_tools/                  # 🔧 MCP tool implementations
+├── mcp_tools/                  # 🔧 MCP tool implementations (RAG)
 │   ├── parse_pdf.py
 │   └── search.py
+│
+├── memory/                     # 🧠 Module Memory (3 collections séparées)
+│   ├── core/
+│   │   ├── embedding_service.py  # GPU embedder (BAAI/bge-m3, RTX 4070)
+│   │   └── __init__.py
+│   ├── schemas/
+│   │   └── memory_schemas.py     # Schémas Conversation, Message, Thought
+│   └── mcp/
+│       ├── conversation_tools.py # Outils MCP conversations
+│       ├── message_tools.py      # Outils MCP messages
+│       └── thought_tools.py      # Outils MCP thoughts
 │
 ├── templates/                  # 🎨 Templates Jinja2
 │   ├── base.html               # Template de base (navigation, CSS)
