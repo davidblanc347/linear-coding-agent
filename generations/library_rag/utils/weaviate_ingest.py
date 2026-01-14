@@ -190,8 +190,8 @@ class DeleteResult(TypedDict, total=False):
     Attributes:
         success: Whether deletion succeeded.
         error: Error message if deletion failed.
-        deleted_chunks: Number of chunks deleted from Chunk_v2 collection.
-        deleted_summaries: Number of summaries deleted from Summary_v2 collection.
+        deleted_chunks: Number of chunks deleted from Chunk collection.
+        deleted_summaries: Number of summaries deleted from Summary collection.
 
     Example:
         >>> result = delete_document_chunks("platon_republique")
@@ -725,7 +725,7 @@ def ingest_summaries(
         Recursively processes nested TOC entries (children).
     """
     try:
-        summary_collection: Collection[Any, Any] = client.collections.get("Summary_v2")
+        summary_collection: Collection[Any, Any] = client.collections.get("Summary")
     except Exception as e:
         logger.warning(f"Collection Summary non trouvée: {e}")
         return 0
@@ -833,9 +833,9 @@ def ingest_document(
 ) -> IngestResult:
     """Ingest document chunks into Weaviate with nested objects.
 
-    Main ingestion function that inserts chunks into the Chunk_v2 collection
+    Main ingestion function that inserts chunks into the Chunk collection
     with nested Work references. Optionally also creates entries in the
-    Summary_v2 collection.
+    Summary collection.
 
     This function uses batch insertion for optimal performance and
     constructs proper nested objects for filtering capabilities.
@@ -856,7 +856,7 @@ def ingest_document(
         toc: Optional table of contents for Summary collection.
         hierarchy: Optional complete document hierarchy structure.
         pages: Number of pages in source document. Defaults to 0.
-        ingest_summary_collection: If True, also insert into Summary_v2
+        ingest_summary_collection: If True, also insert into Summary
             collection (requires toc). Defaults to False.
 
     Returns:
@@ -911,7 +911,7 @@ def ingest_document(
 
             # Récupérer la collection Chunk
             try:
-                chunk_collection: Collection[Any, Any] = client.collections.get("Chunk_v2")
+                chunk_collection: Collection[Any, Any] = client.collections.get("Chunk")
             except Exception as e:
                 return IngestResult(
                     success=False,
@@ -983,14 +983,14 @@ def ingest_document(
                     "keywords": chunk.get("concepts", chunk.get("keywords", [])),
                     "language": language,
                     "orderIndex": idx,
-                    # Use flat fields instead of nested objects for Chunk_v2 schema
+                    # Use flat fields instead of nested objects for Chunk schema
                     "workTitle": title,
                     "workAuthor": author,
                     "year": metadata.get("year", 0) if metadata.get("year") else 0,
-                    # Note: document reference fields not used in current Chunk_v2 schema
+                    # Note: document reference fields not used in current Chunk schema
                 }
 
-                # Note: Nested objects validation skipped for Chunk_v2 flat schema
+                # Note: Nested objects validation skipped for Chunk flat schema
                 # validate_chunk_nested_objects(chunk_obj, idx, doc_name)
 
                 objects_to_insert.append(chunk_obj)
@@ -1130,7 +1130,7 @@ def delete_document_chunks(doc_name: str) -> DeleteResult:
 
             # Supprimer les chunks (filtrer sur document.sourceId nested)
             try:
-                chunk_collection: Collection[Any, Any] = client.collections.get("Chunk_v2")
+                chunk_collection: Collection[Any, Any] = client.collections.get("Chunk")
                 result = chunk_collection.data.delete_many(
                     where=wvq.Filter.by_property("document.sourceId").equal(doc_name)
                 )
@@ -1140,7 +1140,7 @@ def delete_document_chunks(doc_name: str) -> DeleteResult:
 
             # Supprimer les summaries (filtrer sur document.sourceId nested)
             try:
-                summary_collection: Collection[Any, Any] = client.collections.get("Summary_v2")
+                summary_collection: Collection[Any, Any] = client.collections.get("Summary")
                 result = summary_collection.data.delete_many(
                     where=wvq.Filter.by_property("document.sourceId").equal(doc_name)
                 )

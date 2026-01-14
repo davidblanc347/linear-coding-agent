@@ -193,7 +193,7 @@ def get_collection_stats() -> Optional[CollectionStats]:
             stats: CollectionStats = {}
 
             # Chunk stats (renamed from Passage)
-            passages = client.collections.get("Chunk_v2")
+            passages = client.collections.get("Chunk")
             passage_count = passages.aggregate.over_all(total_count=True)
             stats["passages"] = passage_count.total_count or 0
 
@@ -248,7 +248,7 @@ def get_all_passages(
             if client is None:
                 return []
 
-            chunks = client.collections.get("Chunk_v2")
+            chunks = client.collections.get("Chunk")
 
             result = chunks.query.fetch_objects(
                 limit=limit,
@@ -293,7 +293,7 @@ def simple_search(
             if client is None:
                 return []
 
-            chunks = client.collections.get("Chunk_v2")
+            chunks = client.collections.get("Chunk")
 
             # Build filters using top-level properties (workAuthor, workTitle)
             filters: Optional[Any] = None
@@ -377,7 +377,7 @@ def hierarchical_search(
             # STAGE 1: Search Summary collection for relevant sections
             # ═══════════════════════════════════════════════════════════════
 
-            summary_collection = client.collections.get("Summary_v2")
+            summary_collection = client.collections.get("Summary")
 
             # Generate query vector with GPU embedder (Phase 5: manual vectorization)
             embedder = get_gpu_embedder()
@@ -423,7 +423,7 @@ def hierarchical_search(
                     "similarity": round((1 - summary_obj.metadata.distance) * 100, 1) if summary_obj.metadata and summary_obj.metadata.distance else 0,
                 })
 
-            # Post-filter sections by author/work (Summary_v2 has workTitle property)
+            # Post-filter sections by author/work (Summary has workTitle property)
             if author_filter or work_filter:
                 print(f"[HIERARCHICAL] Post-filtering {len(sections_data)} sections by work='{work_filter}'")
 
@@ -485,7 +485,7 @@ def hierarchical_search(
             # For each section, search chunks using the section's summary text
             # This groups chunks under their relevant sections
 
-            chunk_collection = client.collections.get("Chunk_v2")
+            chunk_collection = client.collections.get("Chunk")
 
             # Build base filters (author/work only)
             base_filters: Optional[Any] = None
@@ -650,9 +650,9 @@ def summary_only_search(
             if client is None:
                 return []
 
-            summaries = client.collections.get("Summary_v2")
+            summaries = client.collections.get("Summary")
 
-            # Build Work map for metadata lookup (Summary_v2 has workTitle, not document)
+            # Build Work map for metadata lookup (Summary has workTitle, not document)
             work_collection = client.collections.get("Work")
             work_map = {}
             for work in work_collection.iterator(include_vector=False):
@@ -1043,7 +1043,7 @@ def rag_search(
                 print("[RAG Search] Weaviate client unavailable")
                 return []
 
-            chunks = client.collections.get("Chunk_v2")
+            chunks = client.collections.get("Chunk")
 
             # Build work filter if selected_works is provided
             work_filter: Optional[Any] = None
@@ -1536,8 +1536,8 @@ def api_get_works() -> Union[Response, tuple[Response, int]]:
                     "message": "Cannot connect to Weaviate database"
                 }), 500
 
-            # Query Chunk_v2 collection to get all unique works with counts
-            chunks = client.collections.get("Chunk_v2")
+            # Query Chunk collection to get all unique works with counts
+            chunks = client.collections.get("Chunk")
 
             # Fetch all chunks to aggregate by work
             # In v2: work is NOT a nested object, use workTitle and workAuthor properties
@@ -3421,7 +3421,7 @@ def documents() -> str:
             # Get all Works (now with sourceId added in Phase 1 of migration)
             try:
                 work_collection = client.collections.get("Work")
-                chunk_collection = client.collections.get("Chunk_v2")
+                chunk_collection = client.collections.get("Chunk")
 
                 # Build documents from Work collection
                 for work in work_collection.iterator(include_vector=False):
@@ -3461,7 +3461,7 @@ def documents() -> str:
 
             # Count summaries (if collection exists)
             try:
-                summary_collection = client.collections.get("Summary_v2")
+                summary_collection = client.collections.get("Summary")
                 for summary in summary_collection.iterator(include_vector=False):
                     work_title = summary.properties.get("workTitle")
 

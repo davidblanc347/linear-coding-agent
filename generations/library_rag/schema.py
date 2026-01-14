@@ -9,8 +9,8 @@ Schema Architecture:
     querying. The hierarchy is::
 
         Work (metadata only)
-          ├── Chunk_v2 (vectorized text fragments)
-          └── Summary_v2 (vectorized chapter summaries)
+          ├── Chunk (vectorized text fragments)
+          └── Summary (vectorized chapter summaries)
 
 Collections:
     **Work** (no vectorization):
@@ -18,21 +18,21 @@ Collections:
         Stores canonical metadata: title, author, year, language, genre.
         Not vectorized - used only for metadata and relationships.
 
-    **Chunk_v2** (manual GPU vectorization):
+    **Chunk** (manual GPU vectorization):
         Text fragments optimized for semantic search (200-800 chars).
         Vectorized with Python GPU embedder (BAAI/bge-m3, 1024-dim).
         Vectorized fields: text, keywords.
         Non-vectorized fields: workTitle, workAuthor, sectionPath, chapterTitle, unitType, orderIndex.
         Includes nested Work reference for denormalized access.
 
-    **Summary_v2** (manual GPU vectorization):
+    **Summary** (manual GPU vectorization):
         LLM-generated chapter/section summaries for high-level search.
         Vectorized with Python GPU embedder (BAAI/bge-m3, 1024-dim).
         Vectorized fields: text, concepts.
         Includes nested Work reference for denormalized access.
 
 Vectorization Strategy:
-    - Only Chunk_v2.text, Chunk_v2.keywords, Summary_v2.text, and Summary_v2.concepts are vectorized
+    - Only Chunk.text, Chunk.keywords, Summary.text, and Summary.concepts are vectorized
     - Manual vectorization with Python GPU embedder (BAAI/bge-m3, 1024-dim, RTX 4070)
     - Metadata fields use skip_vectorization=True for filtering only
     - Work collection has no vectorizer (metadata only)
@@ -56,8 +56,8 @@ Nested Objects:
     denormalized data access. This allows single-query retrieval of chunk
     data with its Work metadata without joins::
 
-        Chunk_v2.work = {title, author}
-        Summary_v2.work = {title, author}
+        Chunk.work = {title, author}
+        Summary.work = {title, author}
 
 Usage:
     From command line::

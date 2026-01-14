@@ -18,8 +18,8 @@ Library RAG combine deux systèmes de recherche sémantique distincts:
 ```
 📦 Library Philosophique (3 collections)
 ├─ Work           → Métadonnées des œuvres philosophiques
-├─ Chunk_v2       → 5355 passages de texte (1024-dim vectors)
-└─ Summary_v2     → Résumés hiérarchiques des documents
+├─ Chunk       → 5355 passages de texte (1024-dim vectors)
+└─ Summary     → Résumés hiérarchiques des documents
 
 🧠 Memory Ikario (2 collections)
 ├─ Thought        → 104 pensées (réflexions, insights)
@@ -249,7 +249,7 @@ curl http://localhost:5000/search?q=Turing
 curl http://localhost:8080/v1/meta
 
 # Vérifier nombre de chunks
-python -c "import weaviate; c=weaviate.connect_to_local(); print(c.collections.get('Chunk_v2').aggregate.over_all()); c.close()"
+python -c "import weaviate; c=weaviate.connect_to_local(); print(c.collections.get('Chunk').aggregate.over_all()); c.close()"
 ```
 
 ## 📊 Métriques de Performance
@@ -407,7 +407,7 @@ docker compose restart
 **Solution**:
 ```bash
 # Vérifier nombre de chunks dans Weaviate
-python -c "import weaviate; c=weaviate.connect_to_local(); print(f'Chunks: {c.collections.get(\"Chunk_v2\").aggregate.over_all().total_count}'); c.close()"
+python -c "import weaviate; c=weaviate.connect_to_local(); print(f'Chunks: {c.collections.get(\"Chunk\").aggregate.over_all().total_count}'); c.close()"
 
 # Réinjecter les données si nécessaire
 python schema.py --recreate-chunk

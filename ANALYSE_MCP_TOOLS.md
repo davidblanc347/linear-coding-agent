@@ -37,7 +37,7 @@ ping()
 
 #### 2. `parse_pdf(pdf_path)`
 **Type**: Ingestion PDF
-**Collection cible**: Work, Chunk_v2, Summary_v2
+**Collection cible**: Work, Chunk, Summary
 
 **Paramètres**:
 - `pdf_path` (str): Chemin local ou URL vers le PDF
@@ -87,7 +87,7 @@ ping()
 
 #### 3. `search_chunks(query, limit, min_similarity, author_filter, work_filter, language_filter)`
 **Type**: Recherche sémantique
-**Collection**: Chunk_v2 (5,372 chunks)
+**Collection**: Chunk (5,372 chunks)
 
 **Paramètres**:
 - `query` (str): Requête en langage naturel
@@ -126,7 +126,7 @@ ping()
 
 #### 4. `search_summaries(query, limit, min_level, max_level)`
 **Type**: Recherche sémantique (haut niveau)
-**Collection**: Summary_v2 (114 résumés)
+**Collection**: Summary (114 résumés)
 
 **Paramètres**:
 - `query` (str): Requête en langage naturel
@@ -161,7 +161,7 @@ ping()
 
 #### 5. `get_document(source_id, include_chunks, include_toc)`
 **Type**: Récupération document
-**Collections**: Work, Chunk_v2
+**Collections**: Work, Chunk
 
 **Paramètres**:
 - `source_id` (str): Identifiant du document
@@ -226,7 +226,7 @@ ping()
 
 #### 7. `get_chunks_by_document(source_id, limit, offset)`
 **Type**: Récupération chunks
-**Collection**: Chunk_v2
+**Collection**: Chunk
 
 **Paramètres**:
 - `source_id` (str): Identifiant du document
@@ -260,7 +260,7 @@ ping()
 
 #### 8. `filter_by_author(author, limit)`
 **Type**: Filtrage par auteur
-**Collections**: Work, Chunk_v2
+**Collections**: Work, Chunk
 
 **Paramètres**:
 - `author` (str): Nom de l'auteur
@@ -294,7 +294,7 @@ ping()
 
 #### 9. `delete_document(source_id, confirm)`
 **Type**: Suppression
-**Collections**: Work, Chunk_v2, Summary_v2
+**Collections**: Work, Chunk, Summary
 
 **Paramètres**:
 - `source_id` (str): Identifiant du document
@@ -605,7 +605,7 @@ ping()
 | Catégorie | Nombre | Collections utilisées | GPU Embedder |
 |-----------|--------|----------------------|--------------|
 | **Système** | 1 | - | - |
-| **Library RAG** | 8 | Work, Chunk_v2, Summary_v2 | ✅ |
+| **Library RAG** | 8 | Work, Chunk, Summary | ✅ |
 | **Memory** | 9 | Thought, Message, Conversation | ✅ |
 | **TOTAL** | **18** | **6 collections** | **5 vectorisées** |
 
@@ -719,8 +719,8 @@ messages = search_messages("transformers architecture")
 
 RAG (3):
 - Work (no vectorizer) - 19 œuvres
-- Chunk_v2 (GPU embedder) - 5,372 chunks
-- Summary_v2 (GPU embedder) - 114 résumés
+- Chunk (GPU embedder) - 5,372 chunks
+- Summary (GPU embedder) - 114 résumés
 
 Memory (3):
 - Conversation (GPU embedder) - 12 conversations
