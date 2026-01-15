@@ -1608,8 +1608,12 @@
 
         if (!chunks || chunks.length === 0) {
             sidebarContent.innerHTML = '<div class="sidebar-empty">Aucun contexte trouvé</div>';
+            sidebarContent.style.display = 'block';
             return;
         }
+
+        // Show sidebar when we have chunks
+        sidebarContent.style.display = 'block';
 
         chunks.forEach((chunk, index) => {
             const chunkDiv = document.createElement('div');
