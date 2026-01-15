@@ -43,6 +43,8 @@ stream_extract.py
 quick_vectorize.py
 vectorize_remaining.py
 migrate_chunk_*.py
+!generations/library_rag/migrate_chunk_v2_to_none_vectorizer.py
+!generations/library_rag/fix_turings_machines.py
 
 # Archives (migration scripts moved here)
 archive/chunk_v2_backup.json

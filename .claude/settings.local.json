@@ -68,7 +68,9 @@
       "Bash(fi)",
       "WebSearch",
       "WebFetch(domain:weaviate.io)",
-      "WebFetch(domain:docs.weaviate.io)"
+      "WebFetch(domain:docs.weaviate.io)",
+      "Bash(stat:*)",
+      "Bash(set PYTHONPATH=C:GitHublinear_coding_library_raggenerationslibrary_rag)"
     ]
   }
 }
