@@ -85,6 +85,15 @@ from memory.mcp import (
     get_conversation_handler,
     search_conversations_handler,
     list_conversations_handler,
+    # Unified tools (cross-collection search and analysis)
+    SearchMemoriesInput,
+    TraceConceptEvolutionInput,
+    CheckConsistencyInput,
+    UpdateThoughtEvolutionStageInput,
+    search_memories_handler,
+    trace_concept_evolution_handler,
+    check_consistency_handler,
+    update_thought_evolution_stage_handler,
 )
 
 # =============================================================================
@@ -831,6 +840,176 @@ async def list_conversations(
         category_filter=category_filter,
     )
     result = await list_conversations_handler(input_data)
+    return result
+
+
+# =============================================================================
+# Unified Memory Tools (Cross-Collection Search and Analysis)
+# =============================================================================
+
+
+@mcp.tool()
+async def search_memories(
+    query: str,
+    n_results: int = 5,
+    filter_type: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
+    sort_by: str = "relevance",
+) -> Dict[str, Any]:
+    """
+    Search across both Thoughts and Conversations (unified memory search).
+
+    This is the primary search tool for finding relevant memories across
+    all memory types. Use this when you need to search broadly.
+
+    Args:
+        query: Search query text (can be empty "" to list all).
+        n_results: Number of results to return (1-20, default 5).
+        filter_type: Filter to 'thoughts' or 'conversations' only (optional).
+        since: Filter after date - ISO 8601 or relative (7d, 3h, 1w, 30m).
+        before: Filter before date - ISO 8601 only.
+        sort_by: Sort order - 'relevance', 'date_desc', 'date_asc' (default: relevance).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether search succeeded
+        - query: The search query
+        - results: List of matching memories (thoughts and conversations)
+        - count: Number of results
+        - filter_type: Applied filter
+
+    Example:
+        Search all memories about consciousness::
+
+            search_memories(query="conscience", n_results=10)
+
+        List recent thoughts only::
+
+            search_memories(query="", filter_type="thoughts", since="7d", sort_by="date_desc")
+    """
+    input_data = SearchMemoriesInput(
+        query=query,
+        n_results=n_results,
+        filter_type=filter_type,
+        since=since,
+        before=before,
+        sort_by=sort_by,
+    )
+    result = await search_memories_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def trace_concept_evolution(
+    concept: str,
+    limit: int = 10,
+) -> Dict[str, Any]:
+    """
+    Trace the evolution of a concept through thoughts and conversations over time.
+
+    Use this tool to understand how a concept has developed, what thoughts
+    and conversations have shaped it, and how your understanding has evolved.
+
+    Args:
+        concept: The concept to trace (e.g., "conscience", "liberté", "identité").
+        limit: Maximum timeline points to return (1-50, default 10).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether tracing succeeded
+        - concept: The traced concept
+        - timeline: Chronological list of relevant thoughts and conversations
+        - count: Number of timeline points
+
+    Example:
+        Trace how understanding of consciousness evolved::
+
+            trace_concept_evolution(concept="conscience", limit=15)
+    """
+    input_data = TraceConceptEvolutionInput(
+        concept=concept,
+        limit=limit,
+    )
+    result = await trace_concept_evolution_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def check_consistency(
+    statement: str,
+) -> Dict[str, Any]:
+    """
+    Check if a statement is consistent with existing thoughts and conversations.
+
+    Use this tool to verify if a new thought or statement aligns with
+    what has been said or thought before. Helps identify potential
+    contradictions or evolutions in thinking.
+
+    Args:
+        statement: The statement or thought to check for consistency.
+
+    Returns:
+        Dictionary containing:
+        - success: Whether check succeeded
+        - statement: The checked statement
+        - consistency_score: 0-1 score (1 = highly consistent)
+        - analysis: Textual analysis of consistency
+        - related_content: List of related thoughts/conversations
+        - count: Number of related items found
+
+    Example:
+        Check if a statement aligns with past thinking::
+
+            check_consistency(statement="La conscience est un phénomène émergent")
+    """
+    input_data = CheckConsistencyInput(
+        statement=statement,
+    )
+    result = await check_consistency_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def update_thought_evolution_stage(
+    thought_id: str,
+    new_stage: str,
+) -> Dict[str, Any]:
+    """
+    Update the evolution stage of an existing thought.
+
+    Use this to track how thoughts develop over time. Stages represent
+    the maturity and status of a thought.
+
+    Args:
+        thought_id: ID of the thought (format: thought_YYYY-MM-DDTHH:MM:SS or UUID).
+        new_stage: New evolution stage:
+            - 'nascent': Initial, forming thought
+            - 'developing': Being refined and explored
+            - 'mature': Well-developed and stable
+            - 'revised': Has been updated/corrected
+            - 'abandoned': No longer held or relevant
+
+    Returns:
+        Dictionary containing:
+        - success: Whether update succeeded
+        - thought_id: The thought ID
+        - new_stage: The new stage
+        - message: Confirmation message
+
+    Example:
+        Mark a thought as mature::
+
+            update_thought_evolution_stage(
+                thought_id="thought_2025-01-15T10:30:00",
+                new_stage="mature"
+            )
+    """
+    input_data = UpdateThoughtEvolutionStageInput(
+        thought_id=thought_id,
+        new_stage=new_stage,
+    )
+    result = await update_thought_evolution_stage_handler(input_data)
     return result
 
 

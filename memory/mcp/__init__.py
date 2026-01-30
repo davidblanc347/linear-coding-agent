@@ -30,6 +30,17 @@ from memory.mcp.conversation_tools import (
     list_conversations_handler,
 )
 
+from memory.mcp.unified_tools import (
+    SearchMemoriesInput,
+    TraceConceptEvolutionInput,
+    CheckConsistencyInput,
+    UpdateThoughtEvolutionStageInput,
+    search_memories_handler,
+    trace_concept_evolution_handler,
+    check_consistency_handler,
+    update_thought_evolution_stage_handler,
+)
+
 __all__ = [
     # Thought tools
     "AddThoughtInput",
@@ -53,4 +64,14 @@ __all__ = [
     "get_conversation_handler",
     "search_conversations_handler",
     "list_conversations_handler",
+
+    # Unified tools (cross-collection)
+    "SearchMemoriesInput",
+    "TraceConceptEvolutionInput",
+    "CheckConsistencyInput",
+    "UpdateThoughtEvolutionStageInput",
+    "search_memories_handler",
+    "trace_concept_evolution_handler",
+    "check_consistency_handler",
+    "update_thought_evolution_stage_handler",
 ]
