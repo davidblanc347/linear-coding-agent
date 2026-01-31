@@ -35,23 +35,21 @@ class OccasionLog:
     previous_state_id: int
     prehended_thoughts_count: int
     prehended_docs_count: int
-    prehended_thoughts: List[str] = field(default_factory=list)  # Résumés des pensées
 
     # Concrescence
     response_summary: str
-    new_thoughts: List[str] = field(default_factory=list)
-    tools_used: List[str] = field(default_factory=list)
 
     # Satisfaction
     new_state_id: int
     alpha_used: float
     beta_used: float
 
-    # Profils
+    # Champs avec valeurs par défaut (doivent être après les champs obligatoires)
+    prehended_thoughts: List[str] = field(default_factory=list)  # Résumés des pensées
+    new_thoughts: List[str] = field(default_factory=list)
+    tools_used: List[str] = field(default_factory=list)
     profile_before: Dict[str, Dict[str, float]] = field(default_factory=dict)
     profile_after: Dict[str, Dict[str, float]] = field(default_factory=dict)
-
-    # Métriques
     processing_time_ms: int = 0
     token_count: Optional[int] = None
 
@@ -83,7 +81,7 @@ class OccasionLogger:
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(asdict(occasion), f, indent=2, ensure_ascii=False)
 
-        print(f"[OccasionLogger] Occasion {occasion.occasion_id} → {filepath}")
+        print(f"[OccasionLogger] Occasion {occasion.occasion_id} -> {filepath}")
         return filepath
 
     def get_occasion(self, occasion_id: int) -> Optional[OccasionLog]:
