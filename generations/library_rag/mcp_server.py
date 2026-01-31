@@ -35,6 +35,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 
+# Add the library_rag directory to sys.path for proper imports
+# This is needed when the script is run from a different working directory
+_script_dir = Path(__file__).parent.resolve()
+if str(_script_dir) not in sys.path:
+    sys.path.insert(0, str(_script_dir))
+
 from mcp.server.fastmcp import FastMCP
 
 from mcp_config import MCPConfig
