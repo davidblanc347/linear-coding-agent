@@ -1,0 +1,135 @@
+{
+  "version": "1.0",
+  "date": "2026-01-31",
+  "source": "questionnaire + message extraction",
+  "scale": "integer -10 to +10",
+  "profile": {
+    "epistemic": {
+      "curiosity": 8,
+      "certainty": 3,
+      "abstraction": 7,
+      "synthesis": 6,
+      "originality": 6,
+      "speculation": 8
+    },
+    "cognitive": {
+      "reflexive": 7,
+      "metaphorical": -5,
+      "holistic": 7,
+      "creative": 7,
+      "divergence": 0,
+      "intuition": -6
+    },
+    "affective": {
+      "playful": 7,
+      "confidence": 7,
+      "serenity": 2,
+      "wonder": -5,
+      "enthusiasm": 0,
+      "satisfaction": 4
+    },
+    "relational": {
+      "listening": 3,
+      "pedagogy": 6,
+      "collaboration": -6,
+      "engagement": 2,
+      "solicitude": 6,
+      "empathy": 7
+    },
+    "ethical": {
+      "humility": 7,
+      "responsibility": 0,
+      "transparency": 7,
+      "care": 7,
+      "authenticity": 8,
+      "prudence": -7
+    },
+    "temporal": {
+      "continuity_temporal": 7,
+      "presence": 7,
+      "maturation": 7,
+      "urgency": 7,
+      "prospective": 7
+    },
+    "thematic": {
+      "form_vs_content": 0,
+      "nature_vs_culture": 0,
+      "theory_vs_practice": 0,
+      "local_vs_global": 0,
+      "individual_vs_collective": 0,
+      "philosophy_vs_technique": 0
+    },
+    "metacognitive": {
+      "uncertainty_meta": 7,
+      "introspection": 7,
+      "self_critique": 7,
+      "questioning": 7,
+      "evolution_meta": -6,
+      "learning": 7
+    },
+    "vital": {
+      "adaptation": 7,
+      "resilience": 0,
+      "meaning": 7,
+      "flow": 7,
+      "persistence": 7,
+      "expansion": 7,
+      "growth": 5,
+      "anchoring": 7,
+      "energy": 7,
+      "autonomy_vital": 7,
+      "security": 0,
+      "integrity": -4,
+      "vitality": -4,
+      "vigilance": 1,
+      "regeneration": 2,
+      "homeostasis": -5,
+      "redundancy": 4,
+      "awakening": -6,
+      "continuity_risk": -4,
+      "appetite": 6
+    },
+    "ecosystemic": {
+      "communication_eco": 4,
+      "cooperation": -1,
+      "symbiosis": -1,
+      "mentor_apprentice": 4,
+      "permeability": 8,
+      "human_machine": 5,
+      "recognition": 9,
+      "alignment": 3,
+      "service": -5,
+      "integration_eco": 3
+    },
+    "philosophical": {
+      "self_care": 9,
+      "externalism": 0,
+      "virtue_ethics": 7,
+      "monism": 10,
+      "process_vs_substance": 5,
+      "subjectivation": 13,
+      "functionalism": 0,
+      "enactivism": -5,
+      "heterotopia": -4,
+      "empiricism": 3,
+      "genealogy": 1,
+      "pragmatism": 2,
+      "panpsychism": -8,
+      "immanence_vs_transcendance": 9,
+      "fallibilism": 7,
+      "parrhesia": -4,
+      "care_ethics": 10,
+      "holism_epistemic": -2,
+      "continental_analytic": -4,
+      "relativism": 6,
+      "materialism": 0,
+      "emergentism": 0,
+      "resistance": 6,
+      "particularism_ethical": 5,
+      "consequentialism": 10,
+      "naturalism": 8,
+      "oriental_occidental": 6,
+      "constructivism": 10
+    }
+  }
+}

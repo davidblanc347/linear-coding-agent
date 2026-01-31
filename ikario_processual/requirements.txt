@@ -1,0 +1,20 @@
+# Requirements pour ikario_processual
+# Installation: pip install -r requirements.txt
+
+# === Phase 0: Backup ===
+requests>=2.31.0
+
+# === Phase 1-2: StateVector et Directions ===
+weaviate-client>=4.4.0
+numpy>=1.24.0
+sentence-transformers>=2.2.0  # Pour BGE-M3
+
+# === Phase 5+: Occasion Manager ===
+# claude-code-sdk  # À installer séparément via pip install claude-code-sdk
+
+# === Tests ===
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# === Utilitaires ===
+python-dotenv>=1.0.0
