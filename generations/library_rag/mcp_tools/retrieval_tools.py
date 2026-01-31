@@ -1305,7 +1305,6 @@ async def filter_by_author_handler(
                     # Build document summaries (one document per work now)
                     work_documents: List[DocumentSummary] = [doc_summary]
                     work_chunks_total = chunks_count
-                        work_chunks_total += chunks_count
 
                     # If include_chunk_counts is False and we don't have chunksCount,
                     # we can optionally query the Chunk collection directly
