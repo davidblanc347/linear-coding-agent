@@ -13,8 +13,8 @@
 | Phase 1 | ✅ TERMINÉ | `agentSdkService.js` créé avec toutes les fonctions |
 | Phase 2 | ✅ TERMINÉ | `messages.js` et `claude.js` migrés vers SDK |
 | Phase 3 | ✅ TERMINÉ | `@anthropic-ai/sdk` supprimé de package.json |
-| Phase 4 | ⏳ À FAIRE | Tests et validation |
-| Phase 5 | ⏳ À FAIRE | Mode AGENT auto-poïétique |
+| Phase 4 | ✅ TERMINÉ | Tests et validation (modules importés OK) |
+| Phase 5 | ✅ TERMINÉ | Mode AGENT auto-poïétique (`/api/agent/evolve`) |
 
 **Fichiers backupés** (`backups/pre-agent-sdk/`):
 - `messages.js`, `claude.js`, `unifiedRagClient.js`, `tavilyMcpClient.js`, `toolExecutor.js`
