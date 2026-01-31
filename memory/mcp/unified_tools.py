@@ -13,6 +13,9 @@ import os
 from datetime import datetime, timedelta
 import re
 
+# Import embedder for vector search (since Weaviate vectorizer is "none")
+from memory.core.embedding_service import get_embedder
+
 
 # =============================================================================
 # Input Models
@@ -110,10 +113,17 @@ async def search_memories_handler(input_data: SearchMemoriesInput) -> Dict[str, 
     Search across both Thoughts and Conversations.
 
     Returns unified results sorted by relevance or date.
+    Uses near_vector with embedder since Weaviate vectorizer is "none".
     """
     try:
         client = get_weaviate_client()
         results = []
+
+        # Get embedder for vector search
+        embedder = get_embedder()
+        query_vector = None
+        if input_data.query:
+            query_vector = embedder.embed_batch([input_data.query])[0].tolist()
 
         # Parse date filters
         since_dt = parse_relative_date(input_data.since) if input_data.since else None
@@ -124,9 +134,9 @@ async def search_memories_handler(input_data: SearchMemoriesInput) -> Dict[str, 
             try:
                 thought_collection = client.collections.get("Thought")
 
-                if input_data.query:
-                    thought_results = thought_collection.query.near_text(
-                        query=input_data.query,
+                if query_vector:
+                    thought_results = thought_collection.query.near_vector(
+                        near_vector=query_vector,
                         limit=input_data.n_results,
                         return_metadata=MetadataQuery(distance=True),
                     )
@@ -174,9 +184,9 @@ async def search_memories_handler(input_data: SearchMemoriesInput) -> Dict[str, 
             try:
                 conv_collection = client.collections.get("Conversation")
 
-                if input_data.query:
-                    conv_results = conv_collection.query.near_text(
-                        query=input_data.query,
+                if query_vector:
+                    conv_results = conv_collection.query.near_vector(
+                        near_vector=query_vector,
                         limit=input_data.n_results,
                         return_metadata=MetadataQuery(distance=True),
                     )
@@ -256,16 +266,21 @@ async def trace_concept_evolution_handler(input_data: TraceConceptEvolutionInput
     Trace the evolution of a concept through thoughts and conversations over time.
 
     Returns a timeline showing how the concept appeared and evolved.
+    Uses near_vector with embedder since Weaviate vectorizer is "none".
     """
     try:
         client = get_weaviate_client()
         timeline = []
 
+        # Get embedder for vector search
+        embedder = get_embedder()
+        concept_vector = embedder.embed_batch([input_data.concept])[0].tolist()
+
         # Search Thoughts for the concept
         try:
             thought_collection = client.collections.get("Thought")
-            thought_results = thought_collection.query.near_text(
-                query=input_data.concept,
+            thought_results = thought_collection.query.near_vector(
+                near_vector=concept_vector,
                 limit=input_data.limit,
                 return_metadata=MetadataQuery(distance=True),
             )
@@ -291,8 +306,8 @@ async def trace_concept_evolution_handler(input_data: TraceConceptEvolutionInput
         # Search Conversations for the concept
         try:
             conv_collection = client.collections.get("Conversation")
-            conv_results = conv_collection.query.near_text(
-                query=input_data.concept,
+            conv_results = conv_collection.query.near_vector(
+                near_vector=concept_vector,
                 limit=input_data.limit,
                 return_metadata=MetadataQuery(distance=True),
             )
@@ -343,16 +358,21 @@ async def check_consistency_handler(input_data: CheckConsistencyInput) -> Dict[s
     Check if a statement is consistent with existing thoughts and conversations.
 
     Searches for similar content and identifies potential contradictions.
+    Uses near_vector with embedder since Weaviate vectorizer is "none".
     """
     try:
         client = get_weaviate_client()
         related_content = []
 
+        # Get embedder for vector search
+        embedder = get_embedder()
+        statement_vector = embedder.embed_batch([input_data.statement])[0].tolist()
+
         # Search for similar thoughts
         try:
             thought_collection = client.collections.get("Thought")
-            thought_results = thought_collection.query.near_text(
-                query=input_data.statement,
+            thought_results = thought_collection.query.near_vector(
+                near_vector=statement_vector,
                 limit=10,
                 return_metadata=MetadataQuery(distance=True),
             )
@@ -375,8 +395,8 @@ async def check_consistency_handler(input_data: CheckConsistencyInput) -> Dict[s
         # Search for similar conversations
         try:
             conv_collection = client.collections.get("Conversation")
-            conv_results = conv_collection.query.near_text(
-                query=input_data.statement,
+            conv_results = conv_collection.query.near_vector(
+                near_vector=statement_vector,
                 limit=10,
                 return_metadata=MetadataQuery(distance=True),
             )
