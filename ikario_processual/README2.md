@@ -246,11 +246,111 @@ print(status['status'])  # 'healthy', 'warning', ou 'critical'
 
 ---
 
+## API REST (FastAPI)
+
+L'architecture v2 est exposée via une API REST sur le port 8100.
+
+```bash
+# Démarrer l'API
+uvicorn ikario_processual.api:app --reload --port 8100
+```
+
+### Endpoints
+
+| Endpoint | Méthode | Description |
+|----------|---------|-------------|
+| `/health` | GET | Statut du service |
+| `/cycle` | POST | Exécuter un cycle sémiotique |
+| `/translate` | POST | Traduire l'état en langage |
+| `/state` | GET | État actuel (10 premières valeurs par dimension) |
+| `/vigilance` | GET | Vérifier la dérive vs x_ref |
+| `/metrics` | GET | Métriques du système |
+| `/profile` | GET | **Profil processuel complet (100 directions)** |
+| `/reset` | POST | Réinitialiser à S(0) |
+
+### Endpoint `/profile`
+
+Retourne les projections d'Ikario et David sur les 100 directions :
+
+```json
+{
+  "state_id": 2,
+  "directions_count": 100,
+  "david_similarity": 0.6093,
+  "profile": {
+    "epistemic": {
+      "curiosity": {"value": 0.42, "dimension": "firstness", "pole_positive": "...", "pole_negative": "..."},
+      ...
+    },
+    ...
+  },
+  "david_profile": { ... }
+}
+```
+
+### Calcul des Tenseurs
+
+#### Ikario (état courant)
+
+```
+1. Charger StateVector v1 depuis Weaviate (agrégat thoughts + messages)
+2. Charger les 113 thoughts par catégorie
+3. Construire StateTensor 8×1024 :
+   - Base: StateVector v1 (70%)
+   - Enrichissement: thoughts par type (30%)
+   - Mapping: thought_type → dimension (reflection→firstness, emotion→dispositions, etc.)
+```
+
+#### David (x_ref)
+
+```
+1. Charger messages utilisateur depuis SQLite (100 messages récents)
+2. Embed avec BGE-M3 → vecteur 1024-dim
+3. Charger profil déclaré (11 catégories, questionnaire JSON)
+4. Ajuster le tenseur selon les valeurs déclarées :
+   - Pour chaque direction avec valeur déclarée
+   - Calculer delta = (declared - projected)
+   - Ajuster le vecteur de la dimension correspondante
+```
+
+**Résultat** : Similarité Ikario-David ~60% (varie selon l'évolution)
+
+### Mapping Catégorie → Dimension
+
+| Catégorie | Dimension StateTensor |
+|-----------|----------------------|
+| epistemic | firstness |
+| metacognitive | secondness |
+| cognitive | thirdness |
+| philosophical | thirdness |
+| affective | dispositions |
+| vital | dispositions |
+| temporal | orientations |
+| relational | engagements |
+| ecosystemic | engagements |
+| thematic | pertinences |
+| ethical | valeurs |
+
+### Intégration Express
+
+Le serveur Express (port 5175) appelle l'API Python via `ikarioProcessualService.js` :
+
+```javascript
+import { getProfile, checkHealth } from './services/ikarioProcessualService.js';
+
+// Route /api/rag/processual/profile
+// 1. Vérifie si l'API Python v2 est disponible
+// 2. Si oui: utilise v2_tensor (StateTensor 8×1024)
+// 3. Sinon: fallback v1 (StateVector 1024)
+```
+
+---
+
 ## Installation
 
 ```bash
 # Dépendances
-pip install numpy weaviate-client sentence-transformers anthropic
+pip install numpy weaviate-client sentence-transformers anthropic fastapi uvicorn requests
 
 # Tests
 pytest ikario_processual/tests/ -v
@@ -349,8 +449,8 @@ pytest ikario_processual/tests/test_integration_v2.py -v
 - [x] Phase 6 : Vigilance x_ref
 - [x] Phase 7 : Daemon autonome
 - [x] Phase 8 : Métriques et intégration
-- [ ] Phase 9 : Intégration MCP servers
-- [ ] Phase 10 : Interface web Ikario
+- [x] Phase 9 : API REST + Intégration Express (v2_tensor)
+- [ ] Phase 10 : Interface web Ikario (panneau profil fonctionnel)
 
 ---
 
