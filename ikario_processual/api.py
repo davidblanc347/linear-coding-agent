@@ -14,6 +14,7 @@ Endpoints:
     GET  /state           - État actuel
     GET  /vigilance       - Vérifier la dérive
     GET  /metrics         - Métriques du système
+    GET  /profile         - Profil processuel (109 directions)
 """
 
 import os
@@ -24,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from contextlib import asynccontextmanager
 
 import numpy as np
+import requests
 from dotenv import load_dotenv
 
 # Load env
@@ -39,9 +41,10 @@ from .state_tensor import StateTensor, DIMENSION_NAMES, EMBEDDING_DIM
 from .dissonance import compute_dissonance, DissonanceResult
 from .fixation import Authority, compute_delta, apply_delta
 from .vigilance import VigilanceSystem, VigilanceConfig, create_vigilance_system
-from .state_to_language import StateToLanguage, ProjectionDirection
+from .state_to_language import StateToLanguage, ProjectionDirection, CATEGORY_TO_DIMENSION
 from .daemon import TriggerType, DaemonConfig
 from .metrics import ProcessMetrics, create_metrics
+from .projection_directions import get_all_directions
 
 
 # =============================================================================
@@ -51,11 +54,13 @@ from .metrics import ProcessMetrics, create_metrics
 _embedding_model = None
 _current_state: Optional[StateTensor] = None
 _initial_state: Optional[StateTensor] = None
+_x_ref: Optional[StateTensor] = None  # David reference
 _vigilance: Optional[VigilanceSystem] = None
 _translator: Optional[StateToLanguage] = None
 _metrics: Optional[ProcessMetrics] = None
 _authority: Optional[Authority] = None
 _startup_time: Optional[datetime] = None
+_directions: List[Dict] = []  # 109 directions from Weaviate
 
 
 # =============================================================================
@@ -125,6 +130,15 @@ class HealthResponse(BaseModel):
     embedding_model: str
 
 
+class ProfileResponse(BaseModel):
+    """Profil processuel (format compatible frontend)."""
+    state_id: int
+    directions_count: int
+    profile: Dict[str, Dict[str, Any]]
+    david_profile: Dict[str, Dict[str, Any]]
+    david_similarity: float
+
+
 # =============================================================================
 # INITIALIZATION
 # =============================================================================
@@ -148,44 +162,376 @@ def load_embedding_model():
         raise
 
 
-def initialize_state():
-    """Initialise l'état depuis le profil David ou crée un état aléatoire."""
-    global _current_state, _initial_state, _vigilance, _metrics
+def _fetch_ikario_state_from_weaviate() -> Optional[StateTensor]:
+    """
+    Récupère l'état d'Ikario depuis Weaviate (thoughts + messages).
 
-    # Chercher le profil David
+    Stratégie:
+    1. Récupère le StateVector v1 existant (agrégat de thoughts/messages)
+    2. Récupère les thoughts par catégorie pour enrichir les dimensions
+    3. Construit un StateTensor 8×1024
+    """
+    WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
+
+    try:
+        # 1. Récupérer le StateVector v1 le plus récent
+        state_query = {
+            "query": """{
+                Get {
+                    StateVector(
+                        sort: [{ path: ["state_id"], order: desc }]
+                        limit: 1
+                    ) {
+                        state_id
+                        timestamp
+                        _additional { vector }
+                    }
+                }
+            }"""
+        }
+
+        response = requests.post(
+            f"{WEAVIATE_URL}/v1/graphql",
+            json=state_query,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+
+        if response.status_code != 200:
+            print(f"[API] Weaviate StateVector query failed: {response.status_code}")
+            return None
+
+        data = response.json()
+        states = data.get("data", {}).get("Get", {}).get("StateVector", [])
+
+        if not states:
+            print("[API] No StateVector found in Weaviate")
+            return None
+
+        state_v1 = states[0]
+        base_vector = np.array(state_v1.get("_additional", {}).get("vector", []))
+
+        if len(base_vector) != EMBEDDING_DIM:
+            print(f"[API] Invalid StateVector dimension: {len(base_vector)}")
+            return None
+
+        print(f"[API] Loaded StateVector v1 (state_id={state_v1.get('state_id')})")
+
+        # 2. Récupérer les thoughts par catégorie pour enrichir les dimensions
+        thoughts_query = {
+            "query": """{
+                Get {
+                    Thought(limit: 500) {
+                        content
+                        thought_type
+                        evolution_stage
+                        _additional { vector }
+                    }
+                }
+            }"""
+        }
+
+        thoughts_response = requests.post(
+            f"{WEAVIATE_URL}/v1/graphql",
+            json=thoughts_query,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+
+        thoughts = []
+        if thoughts_response.status_code == 200:
+            thoughts_data = thoughts_response.json()
+            thoughts = thoughts_data.get("data", {}).get("Get", {}).get("Thought", [])
+            print(f"[API] Loaded {len(thoughts)} thoughts from Weaviate")
+
+        # 3. Construire le StateTensor avec les thoughts catégorisés
+        tensor = StateTensor(
+            state_id=state_v1.get("state_id", 0),
+            timestamp=state_v1.get("timestamp", datetime.now().isoformat()),
+        )
+
+        # Mapping thought_type -> dimension
+        TYPE_TO_DIMENSION = {
+            "reflection": "firstness",      # Qualités immédiates
+            "question": "secondness",       # Réactions, résistances
+            "insight": "thirdness",         # Médiations, lois
+            "emotion": "dispositions",      # États émotionnels
+            "intention": "orientations",    # Intentions, buts
+            "dialogue": "engagements",      # Relations, contexte
+            "observation": "pertinences",   # Saillances, focus
+            "principle": "valeurs",         # Principes éthiques
+        }
+
+        # Agréger les vecteurs par dimension
+        dim_vectors = {dim: [] for dim in DIMENSION_NAMES}
+
+        for thought in thoughts:
+            thought_vec = thought.get("_additional", {}).get("vector", [])
+            if len(thought_vec) != EMBEDDING_DIM:
+                continue
+
+            thought_type = thought.get("thought_type", "reflection")
+            target_dim = TYPE_TO_DIMENSION.get(thought_type, "thirdness")
+            dim_vectors[target_dim].append(np.array(thought_vec))
+
+        # Construire chaque dimension
+        for dim_name in DIMENSION_NAMES:
+            vectors = dim_vectors[dim_name]
+
+            if vectors:
+                # Moyenne des thoughts de cette catégorie
+                avg_vec = np.mean(vectors, axis=0)
+                # Mélanger avec le vecteur de base (70% base, 30% thoughts)
+                combined = 0.7 * base_vector + 0.3 * avg_vec
+            else:
+                # Pas de thoughts pour cette dimension, utiliser le vecteur de base
+                # avec une légère perturbation pour différencier
+                noise = np.random.randn(EMBEDDING_DIM) * 0.05
+                combined = base_vector + noise
+
+            # Normaliser
+            combined = combined / np.linalg.norm(combined)
+            setattr(tensor, dim_name, combined)
+
+        return tensor
+
+    except Exception as e:
+        print(f"[API] Error fetching state from Weaviate: {e}")
+        return None
+
+
+def _fetch_david_from_messages() -> Optional[np.ndarray]:
+    """
+    Récupère le vecteur David depuis ses messages dans les conversations.
+
+    Utilise SQLite pour récupérer les messages utilisateur récents,
+    puis les embed avec le modèle BGE-M3.
+    """
+    import sqlite3
+
+    # Trouver la base de données SQLite (claude-clone.db contient les messages)
+    db_paths = [
+        Path(__file__).parent.parent / "generations" / "ikario" / "server" / "data" / "claude-clone.db",
+        Path("C:/Users/david/SynologyDrive/Linear_coding_ikario/generations/ikario/server/data/claude-clone.db"),
+    ]
+
+    db_path = None
+    for p in db_paths:
+        if p.exists():
+            db_path = p
+            break
+
+    if not db_path:
+        print("[API] SQLite database not found")
+        return None
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+
+        # Récupérer les messages utilisateur récents (excluant les tests)
+        cursor.execute("""
+            SELECT m.content
+            FROM messages m
+            JOIN conversations c ON m.conversation_id = c.id
+            WHERE m.role = 'user'
+              AND c.is_deleted = 0
+              AND LENGTH(m.content) > 20
+              AND LOWER(c.title) NOT LIKE '%test%'
+              AND LOWER(m.content) NOT LIKE '%test%'
+            ORDER BY m.created_at DESC
+            LIMIT 100
+        """)
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            print("[API] No user messages found in database")
+            return None
+
+        print(f"[API] Found {len(rows)} user messages for David")
+
+        # Concaténer les messages (max ~8000 chars)
+        concatenated = ""
+        for (content,) in rows:
+            if len(concatenated) + len(content) > 8000:
+                break
+            concatenated += content + "\n\n"
+
+        # Embed avec le modèle
+        if _embedding_model is None:
+            print("[API] Embedding model not loaded")
+            return None
+
+        david_vector = _embedding_model.encode([concatenated])[0]
+        david_vector = david_vector / np.linalg.norm(david_vector)
+
+        print(f"[API] David vector computed from messages (dim={len(david_vector)})")
+        return david_vector
+
+    except Exception as e:
+        print(f"[API] Error fetching David messages: {e}")
+        return None
+
+
+def _create_david_tensor(base_vector: np.ndarray, declared_profile: dict) -> StateTensor:
+    """
+    Crée le StateTensor de David à partir de son vecteur de messages
+    et le complète avec son profil déclaré.
+
+    Args:
+        base_vector: Vecteur 1024-dim depuis les messages
+        declared_profile: Dict des valeurs déclarées par catégorie
+    """
+    tensor = StateTensor(
+        state_id=-1,  # x_ref a toujours state_id = -1
+        timestamp=datetime.now().isoformat(),
+    )
+
+    # Mapping catégorie déclarée -> dimension StateTensor
+    CATEGORY_TO_DIM = {
+        'epistemic': 'firstness',
+        'affective': 'dispositions',
+        'cognitive': 'thirdness',
+        'relational': 'engagements',
+        'ethical': 'valeurs',
+        'temporal': 'orientations',
+        'thematic': 'pertinences',
+        'metacognitive': 'secondness',
+        'vital': 'dispositions',
+        'ecosystemic': 'engagements',
+        'philosophical': 'thirdness',
+    }
+
+    # Initialiser toutes les dimensions avec le vecteur de base
+    for dim_name in DIMENSION_NAMES:
+        setattr(tensor, dim_name, base_vector.copy())
+
+    # Si on a les directions chargées, ajuster avec le profil déclaré
+    if _directions and declared_profile:
+        # Construire un map direction_name -> vector
+        direction_map = {}
+        for d in _directions:
+            name = d.get("name")
+            vec = d.get("_additional", {}).get("vector", [])
+            category = d.get("category", "unknown")
+            if name and len(vec) == EMBEDDING_DIM:
+                direction_map[name] = {
+                    "vector": np.array(vec),
+                    "category": category,
+                }
+
+        # Ajuster chaque dimension en fonction des valeurs déclarées
+        for category, directions_values in declared_profile.items():
+            target_dim = CATEGORY_TO_DIM.get(category, "thirdness")
+            current_vec = getattr(tensor, target_dim).copy()
+
+            for name, declared_value in directions_values.items():
+                if declared_value is None or name not in direction_map:
+                    continue
+
+                dir_info = direction_map[name]
+                dir_vec = dir_info["vector"]
+
+                # Valeur déclarée: -10 à +10, convertir en -0.167 à +0.167
+                declared_scaled = declared_value / 60.0
+
+                # Projection actuelle
+                current_proj = float(np.dot(current_vec, dir_vec))
+
+                # Delta à appliquer
+                delta = declared_scaled - current_proj
+
+                # Ajuster le vecteur (facteur 0.5 pour ne pas trop modifier)
+                current_vec = current_vec + delta * dir_vec * 0.5
+
+            # Normaliser et stocker
+            current_vec = current_vec / np.linalg.norm(current_vec)
+            setattr(tensor, target_dim, current_vec)
+
+    return tensor
+
+
+def initialize_state():
+    """
+    Initialise l'état d'Ikario et la référence David.
+
+    Ikario: Calculé depuis Weaviate (thoughts + messages)
+    David (x_ref): Messages utilisateur + profil déclaré
+    """
+    global _current_state, _initial_state, _x_ref, _vigilance, _metrics
+
+    # 1. Charger le profil déclaré de David (pour compléter)
     profile_path = Path(__file__).parent / "david_profile_declared.json"
+    declared_profile = None
 
     if profile_path.exists():
-        print(f"[API] Loading David profile from {profile_path}")
+        import json
+        with open(profile_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            declared_profile = data.get("profile", {})
+        print(f"[API] Loaded David declared profile ({len(declared_profile)} categories)")
+
+    # 2. Créer x_ref (David) depuis ses messages + profil déclaré
+    david_vector = _fetch_david_from_messages()
+
+    if david_vector is not None:
+        _x_ref = _create_david_tensor(david_vector, declared_profile)
+        print("[API] David tensor created from messages + declared profile")
+    elif declared_profile:
+        # Fallback: utiliser uniquement le profil déclaré
+        print("[API] Falling back to declared profile only for David")
         from .vigilance import DavidReference
-        x_ref = DavidReference.create_from_declared_profile(str(profile_path))
-
-        # Créer l'état initial comme copie de x_ref
-        _initial_state = x_ref.copy()
-        _initial_state.state_id = 0
-        _current_state = _initial_state.copy()
-
-        # Créer le système de vigilance
-        _vigilance = VigilanceSystem(x_ref=x_ref)
+        _x_ref = DavidReference.create_from_declared_profile(str(profile_path))
     else:
-        print(f"[API] No David profile found, creating random state")
+        print("[API] No David profile available, x_ref will be set later")
+        _x_ref = None
+
+    # 2. Charger l'état d'Ikario depuis Weaviate (thoughts + messages)
+    ikario_state = _fetch_ikario_state_from_weaviate()
+
+    if ikario_state is not None:
+        print(f"[API] Ikario state loaded from Weaviate: S({ikario_state.state_id})")
+        _initial_state = ikario_state
+        _current_state = ikario_state.copy()
+    else:
+        # Fallback: créer un état aléatoire
+        print("[API] Creating random initial state (no Weaviate data)")
         _initial_state = StateTensor(
             state_id=0,
             timestamp=datetime.now().isoformat(),
         )
-        # Initialiser avec des vecteurs aléatoires normalisés
         for dim_name in DIMENSION_NAMES:
             v = np.random.randn(EMBEDDING_DIM)
             v = v / np.linalg.norm(v)
             setattr(_initial_state, dim_name, v)
-
         _current_state = _initial_state.copy()
-        _vigilance = create_vigilance_system()
 
-    # Créer les métriques
+    # 3. Si pas de x_ref, utiliser l'état initial comme référence
+    if _x_ref is None:
+        _x_ref = _initial_state.copy()
+        _x_ref.state_id = -1
+
+    # 4. Créer le système de vigilance
+    _vigilance = VigilanceSystem(x_ref=_x_ref)
+
+    # 5. Créer les métriques
     _metrics = create_metrics(S_0=_initial_state, x_ref=_vigilance.x_ref)
 
-    print(f"[API] State initialized: S({_current_state.state_id})")
+    print(f"[API] State initialized: Ikario=S({_current_state.state_id}), David=x_ref")
+
+
+def initialize_directions():
+    """Charge les 109 directions depuis Weaviate."""
+    global _directions
+
+    try:
+        _directions = get_all_directions()
+        print(f"[API] Loaded {len(_directions)} directions from Weaviate")
+    except Exception as e:
+        print(f"[API] Failed to load directions: {e}")
+        _directions = []
 
 
 def initialize_authority():
@@ -230,6 +576,7 @@ async def lifespan(app: FastAPI):
     initialize_state()
     initialize_authority()
     initialize_translator()
+    initialize_directions()
 
     print("[API] Ikario API ready")
 
@@ -448,6 +795,97 @@ async def reset_state():
     _metrics.reset()
 
     return {"status": "ok", "state_id": _current_state.state_id}
+
+
+@app.get("/profile", response_model=ProfileResponse)
+async def get_profile():
+    """
+    Récupérer le profil processuel projeté sur les 109 directions.
+
+    Pour chaque direction:
+    - Utilise CATEGORY_TO_DIMENSION pour mapper la catégorie à la dimension du StateTensor
+    - Projette le vecteur de cette dimension sur le vecteur de la direction
+
+    Retourne le profil de l'état courant ET le profil de x_ref (David).
+    """
+    if not _directions:
+        raise HTTPException(
+            status_code=503,
+            detail="Directions not loaded from Weaviate"
+        )
+
+    # Projeter l'état courant sur toutes les directions
+    ikario_profile = _compute_tensor_profile(_current_state)
+
+    # Projeter x_ref (David) sur toutes les directions
+    david_profile = _compute_tensor_profile(_x_ref)
+
+    # Calculer la similarité globale (moyenne des cosines sur les 8 dimensions)
+    similarity = _compute_tensor_similarity(_current_state, _x_ref)
+
+    return ProfileResponse(
+        state_id=_current_state.state_id,
+        directions_count=len(_directions),
+        profile=ikario_profile,
+        david_profile=david_profile,
+        david_similarity=similarity,
+    )
+
+
+def _compute_tensor_profile(tensor: StateTensor) -> Dict[str, Dict[str, Any]]:
+    """
+    Calcule le profil d'un StateTensor sur les 109 directions.
+
+    Pour chaque direction:
+    - Récupère sa catégorie (epistemic, affective, etc.)
+    - Utilise CATEGORY_TO_DIMENSION pour trouver la dimension correspondante
+    - Projette le vecteur de cette dimension sur le vecteur de la direction
+    """
+    profile = {}
+
+    for d in _directions:
+        category = d.get("category", "unknown")
+        name = d.get("name", "unknown")
+        direction_vec = d.get("_additional", {}).get("vector", [])
+
+        if not direction_vec:
+            continue
+
+        direction_vec = np.array(direction_vec)
+
+        # Mapper la catégorie à la dimension du StateTensor
+        dim_name = CATEGORY_TO_DIMENSION.get(category, "thirdness")
+        state_vec = getattr(tensor, dim_name)
+
+        # Projection (cosine similarity)
+        projection = float(np.dot(state_vec, direction_vec))
+
+        if category not in profile:
+            profile[category] = {}
+        profile[category][name] = {
+            "value": round(projection, 4),
+            "dimension": dim_name,
+            "pole_positive": d.get("pole_positive", ""),
+            "pole_negative": d.get("pole_negative", ""),
+        }
+
+    return profile
+
+
+def _compute_tensor_similarity(t1: StateTensor, t2: StateTensor) -> float:
+    """
+    Calcule la similarité globale entre deux StateTensors.
+    Moyenne des similarités cosinus sur les 8 dimensions.
+    """
+    similarities = []
+
+    for dim_name in DIMENSION_NAMES:
+        v1 = getattr(t1, dim_name)
+        v2 = getattr(t2, dim_name)
+        sim = float(np.dot(v1, v2))
+        similarities.append(sim)
+
+    return round(sum(similarities) / len(similarities), 4)
 
 
 # =============================================================================
