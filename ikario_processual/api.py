@@ -62,6 +62,18 @@ _authority: Optional[Authority] = None
 _startup_time: Optional[datetime] = None
 _directions: List[Dict] = []  # 109 directions from Weaviate
 
+# Daemon state tracking
+_daemon_mode: str = "idle"  # idle, conversation, autonomous
+_is_ruminating: bool = False
+_last_trigger_type: Optional[str] = None
+_last_trigger_time: Optional[datetime] = None
+_cycles_by_type: Dict[str, int] = {
+    "user": 0,
+    "veille": 0,
+    "corpus": 0,
+    "rumination_free": 0,
+}
+
 
 # =============================================================================
 # REQUEST/RESPONSE MODELS
@@ -137,6 +149,16 @@ class ProfileResponse(BaseModel):
     profile: Dict[str, Dict[str, Any]]
     david_profile: Dict[str, Dict[str, Any]]
     david_similarity: float
+
+
+class DaemonStatusResponse(BaseModel):
+    """Statut du daemon (sémiose interne)."""
+    mode: str  # idle, conversation, autonomous
+    is_ruminating: bool
+    last_trigger: Optional[Dict[str, Any]] = None
+    cycles_breakdown: Dict[str, int]
+    cycles_since_last_user: int
+    time_since_last_user_seconds: Optional[float] = None
 
 
 # =============================================================================
@@ -634,9 +656,26 @@ async def run_cycle(request: CycleRequest):
     3. Appliquer la fixation
     4. Mettre à jour l'état
     """
-    global _current_state
+    global _current_state, _daemon_mode, _is_ruminating, _last_trigger_type, _last_trigger_time, _cycles_by_type
 
     start_time = time.time()
+
+    # Track daemon state
+    _last_trigger_type = request.trigger_type
+    _last_trigger_time = datetime.now()
+    if request.trigger_type in _cycles_by_type:
+        _cycles_by_type[request.trigger_type] += 1
+
+    # Update daemon mode based on trigger type
+    if request.trigger_type == "user":
+        _daemon_mode = "conversation"
+        _is_ruminating = False
+    elif request.trigger_type in ("rumination_free", "corpus"):
+        _daemon_mode = "autonomous"
+        _is_ruminating = True
+    else:
+        _daemon_mode = "conversation"
+        _is_ruminating = False
 
     try:
         # 1. Vectoriser l'entrée
@@ -788,13 +827,60 @@ async def get_metrics():
 @app.post("/reset")
 async def reset_state():
     """Réinitialiser l'état à S(0)."""
-    global _current_state
+    global _current_state, _cycles_by_type, _daemon_mode, _is_ruminating
 
     _current_state = _initial_state.copy()
     _vigilance.reset_cumulative()
     _metrics.reset()
 
+    # Reset daemon tracking
+    _cycles_by_type = {"user": 0, "veille": 0, "corpus": 0, "rumination_free": 0}
+    _daemon_mode = "idle"
+    _is_ruminating = False
+
     return {"status": "ok", "state_id": _current_state.state_id}
+
+
+@app.get("/daemon/status", response_model=DaemonStatusResponse)
+async def get_daemon_status():
+    """
+    Récupérer le statut du daemon (sémiose interne).
+
+    Permet de savoir si Ikario est en train de:
+    - Répondre à un utilisateur (conversation)
+    - Ruminer seul (autonomous)
+    - En attente (idle)
+    """
+    # Calculate cycles since last user interaction
+    cycles_since_user = sum(
+        count for trigger, count in _cycles_by_type.items()
+        if trigger != "user"
+    )
+
+    # Calculate time since last user interaction
+    time_since_user = None
+    if _last_trigger_time and _last_trigger_type == "user":
+        time_since_user = (datetime.now() - _last_trigger_time).total_seconds()
+    elif _last_trigger_time:
+        # If last trigger was not user, count from then
+        time_since_user = (datetime.now() - _last_trigger_time).total_seconds()
+
+    # Build last trigger info
+    last_trigger = None
+    if _last_trigger_type and _last_trigger_time:
+        last_trigger = {
+            "type": _last_trigger_type,
+            "timestamp": _last_trigger_time.isoformat(),
+        }
+
+    return DaemonStatusResponse(
+        mode=_daemon_mode,
+        is_ruminating=_is_ruminating,
+        last_trigger=last_trigger,
+        cycles_breakdown=_cycles_by_type,
+        cycles_since_last_user=cycles_since_user,
+        time_since_last_user_seconds=time_since_user,
+    )
 
 
 @app.get("/profile", response_model=ProfileResponse)
