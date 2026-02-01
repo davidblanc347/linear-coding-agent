@@ -266,6 +266,7 @@ uvicorn ikario_processual.api:app --reload --port 8100
 | `/vigilance` | GET | Vérifier la dérive vs x_ref |
 | `/metrics` | GET | Métriques du système |
 | `/profile` | GET | **Profil processuel complet (100 directions)** |
+| `/daemon/status` | GET | **Statut sémiose interne (mode, rumination)** |
 | `/reset` | POST | Réinitialiser à S(0) |
 
 ### Endpoint `/profile`
@@ -287,6 +288,36 @@ Retourne les projections d'Ikario et David sur les 100 directions :
   "david_profile": { ... }
 }
 ```
+
+### Endpoint `/daemon/status`
+
+Retourne l'état de la sémiose interne d'Ikario :
+
+```json
+{
+  "mode": "autonomous",           // idle | conversation | autonomous
+  "is_ruminating": true,
+  "last_trigger": {
+    "type": "rumination_free",
+    "timestamp": "2026-02-01T22:38:33Z"
+  },
+  "cycles_breakdown": {
+    "user": 1,
+    "veille": 0,
+    "corpus": 0,
+    "rumination_free": 1
+  },
+  "cycles_since_last_user": 1,
+  "time_since_last_user_seconds": 5.5
+}
+```
+
+**Interprétation :**
+- `mode: "idle"` → En attente
+- `mode: "conversation"` → Dialogue avec utilisateur
+- `mode: "autonomous"` + `is_ruminating: true` → **Sémiose interne** 🧠
+
+---
 
 ### Calcul des Tenseurs
 
