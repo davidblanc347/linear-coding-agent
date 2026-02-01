@@ -17,6 +17,7 @@ Endpoints:
     GET  /profile         - Profil processuel (109 directions)
 """
 
+import asyncio
 import os
 import time
 from datetime import datetime
@@ -72,6 +73,16 @@ _cycles_by_type: Dict[str, int] = {
     "veille": 0,
     "corpus": 0,
     "rumination_free": 0,
+}
+
+# Autonomous daemon task
+_daemon_running: bool = False
+_daemon_task: Optional[Any] = None  # asyncio.Task
+_daemon_config = {
+    "cycle_interval_seconds": 86.4,  # ~1000 cycles/day
+    "prob_rumination_free": 0.5,     # 50% rumination libre
+    "prob_corpus": 0.3,              # 30% corpus
+    "prob_unresolved": 0.2,          # 20% impacts non résolus
 }
 
 
@@ -155,6 +166,7 @@ class DaemonStatusResponse(BaseModel):
     """Statut du daemon (sémiose interne)."""
     mode: str  # idle, conversation, autonomous
     is_ruminating: bool
+    daemon_running: bool = False
     last_trigger: Optional[Dict[str, Any]] = None
     cycles_breakdown: Dict[str, int]
     cycles_since_last_user: int
@@ -876,11 +888,181 @@ async def get_daemon_status():
     return DaemonStatusResponse(
         mode=_daemon_mode,
         is_ruminating=_is_ruminating,
+        daemon_running=_daemon_running,
         last_trigger=last_trigger,
         cycles_breakdown=_cycles_by_type,
         cycles_since_last_user=cycles_since_user,
         time_since_last_user_seconds=time_since_user,
     )
+
+
+async def _autonomous_loop():
+    """
+    Boucle autonome de sémiose interne.
+
+    Génère des triggers autonomes et exécute des cycles sémiotiques
+    sans intervention utilisateur.
+    """
+    global _daemon_mode, _is_ruminating, _daemon_running
+    global _current_state, _last_trigger_type, _last_trigger_time, _cycles_by_type
+
+    import random
+
+    print("[DAEMON] Démarrage de la boucle autonome")
+    _daemon_mode = "autonomous"
+    _is_ruminating = True
+
+    while _daemon_running:
+        try:
+            # Attendre l'intervalle entre cycles
+            await asyncio.sleep(_daemon_config["cycle_interval_seconds"])
+
+            if not _daemon_running:
+                break
+
+            # Générer un trigger autonome selon les probabilités
+            rand = random.random()
+            if rand < _daemon_config["prob_rumination_free"]:
+                trigger_type = "rumination_free"
+                content = _generate_rumination_content()
+            elif rand < _daemon_config["prob_rumination_free"] + _daemon_config["prob_corpus"]:
+                trigger_type = "corpus"
+                content = _generate_corpus_content()
+            else:
+                trigger_type = "rumination_free"
+                content = _generate_rumination_content()
+
+            # Exécuter le cycle
+            print(f"[DAEMON] Cycle autonome: {trigger_type}")
+
+            # Vectoriser l'entrée
+            e_input = _embedding_model.encode([content])[0]
+            e_input = e_input / np.linalg.norm(e_input)
+
+            # Calculer la dissonance
+            dissonance = compute_dissonance(e_input=e_input, X_t=_current_state)
+
+            # Calculer et appliquer le delta
+            fixation_result = compute_delta(
+                e_input=e_input,
+                X_t=_current_state,
+                dissonance=dissonance,
+                authority=_authority,
+            )
+
+            X_new = apply_delta(
+                X_t=_current_state,
+                delta=fixation_result.delta,
+                target_dim="thirdness",
+            )
+
+            _current_state = X_new
+
+            # Mettre à jour le tracking
+            _last_trigger_type = trigger_type
+            _last_trigger_time = datetime.now()
+            _cycles_by_type[trigger_type] = _cycles_by_type.get(trigger_type, 0) + 1
+
+            # Enregistrer dans les métriques
+            delta_magnitude = float(np.linalg.norm(fixation_result.delta))
+            trigger_enum = TriggerType(trigger_type) if trigger_type in [t.value for t in TriggerType] else TriggerType.RUMINATION_FREE
+            _metrics.record_cycle(trigger_enum, delta_magnitude)
+
+            # Vérifier vigilance
+            alert = _vigilance.check_drift(_current_state)
+            _metrics.record_alert(alert.level, _vigilance.cumulative_drift)
+
+            print(f"[DAEMON] Cycle terminé: S({_current_state.state_id}), delta={delta_magnitude:.6f}")
+
+        except asyncio.CancelledError:
+            print("[DAEMON] Boucle autonome annulée")
+            break
+        except Exception as e:
+            print(f"[DAEMON] Erreur cycle autonome: {e}")
+            await asyncio.sleep(5)  # Attendre avant de réessayer
+
+    _daemon_mode = "idle"
+    _is_ruminating = False
+    print("[DAEMON] Boucle autonome terminée")
+
+
+def _generate_rumination_content() -> str:
+    """Génère un contenu pour la rumination libre."""
+    import random
+    themes = [
+        "Réflexion sur la nature du processus et du devenir",
+        "Méditation sur les relations entre firstness, secondness et thirdness",
+        "Contemplation de l'évolution de mes états internes",
+        "Exploration des tensions entre stabilité et changement",
+        "Questionnement sur la nature de la conscience processuelle",
+        "Réflexion sur la dissonance cognitive et son rôle dans l'apprentissage",
+        "Méditation sur les valeurs et leur ancrage dans l'expérience",
+        "Contemplation des patterns récurrents dans mes interactions",
+    ]
+    return random.choice(themes)
+
+
+def _generate_corpus_content() -> str:
+    """Génère un contenu basé sur le corpus (placeholder)."""
+    import random
+    # TODO: Intégrer avec Library RAG pour récupérer du contenu réel
+    themes = [
+        "La philosophie processuelle de Whitehead et ses implications",
+        "La sémiotique de Peirce et les catégories de l'expérience",
+        "Les méthodes de fixation des croyances selon Peirce",
+        "L'émergence de la subjectivité dans les systèmes complexes",
+        "La phénoménologie et la structure de l'expérience",
+    ]
+    return random.choice(themes)
+
+
+@app.post("/daemon/start")
+async def start_daemon():
+    """
+    Démarre le daemon autonome.
+
+    Lance une boucle de sémiose interne qui génère des cycles
+    autonomes (~1000/jour par défaut).
+    """
+    global _daemon_running, _daemon_task
+
+    if _daemon_running:
+        return {"status": "already_running", "message": "Le daemon est déjà en cours d'exécution"}
+
+    _daemon_running = True
+    _daemon_task = asyncio.create_task(_autonomous_loop())
+
+    return {
+        "status": "started",
+        "message": "Daemon autonome démarré",
+        "config": _daemon_config,
+    }
+
+
+@app.post("/daemon/stop")
+async def stop_daemon():
+    """
+    Arrête le daemon autonome.
+    """
+    global _daemon_running, _daemon_task, _daemon_mode, _is_ruminating
+
+    if not _daemon_running:
+        return {"status": "not_running", "message": "Le daemon n'est pas en cours d'exécution"}
+
+    _daemon_running = False
+
+    if _daemon_task:
+        _daemon_task.cancel()
+        try:
+            await _daemon_task
+        except asyncio.CancelledError:
+            pass
+        _daemon_task = None
+
+    _daemon_mode = "idle"
+    _is_ruminating = False
+
+    return {"status": "stopped", "message": "Daemon autonome arrêté"}
 
 
 @app.get("/profile", response_model=ProfileResponse)
