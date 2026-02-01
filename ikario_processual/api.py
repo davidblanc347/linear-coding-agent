@@ -79,7 +79,7 @@ _cycles_by_type: Dict[str, int] = {
 _daemon_running: bool = False
 _daemon_task: Optional[Any] = None  # asyncio.Task
 _daemon_config = {
-    "cycle_interval_seconds": 86.4,  # ~1000 cycles/day
+    "cycle_interval_seconds": 864,  # ~100 cycles/day (86400s / 100)
     "prob_rumination_free": 0.5,     # 50% rumination libre
     "prob_corpus": 0.3,              # 30% corpus
     "prob_unresolved": 0.2,          # 20% impacts non résolus
