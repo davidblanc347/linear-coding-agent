@@ -100,6 +100,15 @@ from memory.mcp import (
     trace_concept_evolution_handler,
     check_consistency_handler,
     update_thought_evolution_stage_handler,
+    # Identity tools (state tensors and profiles)
+    GetStateProfileInput,
+    GetDavidProfileInput,
+    CompareProfilesInput,
+    GetStateTensorInput,
+    get_state_profile_handler,
+    get_david_profile_handler,
+    compare_profiles_handler,
+    get_state_tensor_handler,
 )
 
 # =============================================================================
@@ -1016,6 +1025,201 @@ async def update_thought_evolution_stage(
         new_stage=new_stage,
     )
     result = await update_thought_evolution_stage_handler(input_data)
+    return result
+
+
+# =============================================================================
+# Identity Tools (State Vectors and Profiles)
+# =============================================================================
+
+
+@mcp.tool()
+async def get_state_profile(
+    state_id: int | None = None,
+) -> Dict[str, Any]:
+    """
+    Get Ikario's current state profile projected onto interpretable directions.
+
+    Uses StateTensor v2 architecture (8x1024 named vectors). Each category
+    is projected onto its correct tensor dimension via CATEGORY_TO_DIMENSION mapping.
+
+    Returns Ikario's processual identity as a profile organized by categories
+    (epistemic, affective, cognitive, relational, etc.) with values for each
+    interpretable direction (curiosity, certainty, enthusiasm, empathy, etc.).
+
+    Each value represents how strongly Ikario's current state aligns with that
+    direction (-1 to +1 scale, where 0 is neutral).
+
+    Args:
+        state_id: Specific state ID to retrieve (default: latest state).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether query succeeded
+        - state_id: The state ID retrieved
+        - timestamp: When this state was created
+        - trigger_type: What triggered this state
+        - profile: Dict[category, Dict[direction, value]]
+            - epistemic: {curiosity: 0.72, certainty: -0.18, ...}
+            - affective: {enthusiasm: 0.45, serenity: 0.23, ...}
+            - cognitive: {divergence: 0.31, intuition: -0.12, ...}
+            - relational: {engagement: 0.56, empathy: 0.41, ...}
+            - ... (11 categories, ~109 directions total)
+        - directions_count: Total number of directions analyzed
+        - architecture: "v2_tensor"
+        - dimensions_loaded: List of 8 tensor dimension names
+
+    Example:
+        Get current profile::
+
+            get_state_profile()
+
+        Get specific past state::
+
+            get_state_profile(state_id=5)
+    """
+    input_data = GetStateProfileInput(state_id=state_id)
+    result = await get_state_profile_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def get_david_profile(
+    include_declared: bool = True,
+    max_messages: int = 100,
+) -> Dict[str, Any]:
+    """
+    Get David's profile computed from his messages and optionally declared values.
+
+    Analyzes David's recent messages to compute his embedding, then projects it
+    onto the same interpretable directions used for Ikario. Optionally includes
+    David's declared profile values from the questionnaire.
+
+    Args:
+        include_declared: Include declared profile from david_profile_declared.json (default True).
+        max_messages: Maximum number of David's messages to analyze (10-500, default 100).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether query succeeded
+        - profile: Dict[category, Dict[direction, {computed, declared?, declared_normalized?}]]
+            - computed: Value computed from messages (-1 to +1)
+            - declared: Raw declared value from questionnaire (-10 to +10) if available
+            - declared_normalized: Declared value normalized to -1 to +1
+        - similarity_with_ikario: Similarity percentage (0-100%)
+        - messages_analyzed: Number of messages used
+        - has_declared_profile: Whether declared profile was found
+
+    Example:
+        Get full profile with declared values::
+
+            get_david_profile()
+
+        Get computed-only profile::
+
+            get_david_profile(include_declared=False)
+    """
+    input_data = GetDavidProfileInput(
+        include_declared=include_declared,
+        max_messages=max_messages,
+    )
+    result = await get_david_profile_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def compare_profiles(
+    categories: list[str] | None = None,
+    state_id: int | None = None,
+) -> Dict[str, Any]:
+    """
+    Compare Ikario and David profiles to understand similarities and differences.
+
+    Computes both profiles and returns detailed comparison including:
+    - Overall similarity percentage
+    - Per-direction comparison with deltas
+    - Top 5 convergent dimensions (most similar)
+    - Top 5 divergent dimensions (most different)
+
+    Args:
+        categories: Filter to specific categories (e.g., ["epistemic", "affective"]).
+                   If None, compares all categories.
+        state_id: Ikario state ID to compare (default: latest).
+
+    Returns:
+        Dictionary containing:
+        - success: Whether comparison succeeded
+        - similarity: Overall similarity percentage (0-100%)
+        - comparison: Dict[category, Dict[direction, {ikario, david, delta}]]
+        - convergent_dimensions: Top 5 dimensions where Ikario and David are most similar
+            - [{name, category, ikario, david}, ...]
+        - divergent_dimensions: Top 5 dimensions where they differ most
+            - [{name, category, ikario, david}, ...]
+        - categories_compared: List of categories analyzed
+        - directions_compared: Total number of directions compared
+
+    Example:
+        Compare full profiles::
+
+            compare_profiles()
+
+        Compare only epistemic and affective dimensions::
+
+            compare_profiles(categories=["epistemic", "affective"])
+    """
+    input_data = CompareProfilesInput(
+        categories=categories,
+        state_id=state_id,
+    )
+    result = await compare_profiles_handler(input_data)
+    return result
+
+
+@mcp.tool()
+async def get_state_tensor(
+    state_id: int | None = None,
+    entity: str = "ikario",
+) -> Dict[str, Any]:
+    """
+    Get raw 8x1024 state tensor (advanced usage).
+
+    Returns the 8 named dimension vectors (firstness, secondness, thirdness,
+    dispositions, orientations, engagements, pertinences, valeurs) for Ikario,
+    or a single embedding for David. This is useful for advanced analysis,
+    custom projections, or debugging.
+
+    Args:
+        state_id: State ID for Ikario (ignored for David). Default: latest.
+        entity: Which entity's tensor to retrieve: "ikario" or "david".
+
+    Returns:
+        Dictionary containing:
+        - success: Whether query succeeded
+        - entity: The entity ("ikario" or "david")
+        - For Ikario: dimensions dict with 8 named vectors (first 10 values each)
+        - For David: single vector (first 10 values)
+        - metadata: Additional information
+            - For Ikario: state_id, timestamp, trigger_type
+            - For David: source, messages_count
+
+    Example:
+        Get Ikario's current state tensor::
+
+            get_state_tensor(entity="ikario")
+
+        Get David's computed vector::
+
+            get_state_tensor(entity="david")
+
+        Get specific Ikario state::
+
+            get_state_tensor(state_id=3, entity="ikario")
+    """
+    input_data = GetStateTensorInput(
+        state_id=state_id,
+        entity=entity,
+    )
+    result = await get_state_tensor_handler(input_data)
     return result
 
 

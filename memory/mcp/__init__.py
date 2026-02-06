@@ -41,6 +41,17 @@ from memory.mcp.unified_tools import (
     update_thought_evolution_stage_handler,
 )
 
+from memory.mcp.identity_tools import (
+    GetStateProfileInput,
+    GetDavidProfileInput,
+    CompareProfilesInput,
+    GetStateTensorInput,
+    get_state_profile_handler,
+    get_david_profile_handler,
+    compare_profiles_handler,
+    get_state_tensor_handler,
+)
+
 __all__ = [
     # Thought tools
     "AddThoughtInput",
@@ -74,4 +85,14 @@ __all__ = [
     "trace_concept_evolution_handler",
     "check_consistency_handler",
     "update_thought_evolution_stage_handler",
+
+    # Identity tools (state tensors and profiles)
+    "GetStateProfileInput",
+    "GetDavidProfileInput",
+    "CompareProfilesInput",
+    "GetStateTensorInput",
+    "get_state_profile_handler",
+    "get_david_profile_handler",
+    "compare_profiles_handler",
+    "get_state_tensor_handler",
 ]
